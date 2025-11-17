@@ -1,0 +1,11 @@
+/target
+
+# ONNX models folders
+/onnx_models
+
+# Data
+/data
+
+# Python environment
+.venv
+
