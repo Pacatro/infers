@@ -1,43 +1,40 @@
+use std::fmt::{Debug, Display};
+
 use num_traits::Num;
 
-use crate::{InfersResult, tensor::TensorData};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Device {
+    Cpu,
+    Cuda(usize),
+}
 
-pub trait Backend: Clone {
-    type Storage<T: Num + Copy + Clone>: Clone;
+impl Display for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Device::Cpu => write!(f, "cpu"),
+            Device::Cuda(id) => write!(f, "cuda:{}", id),
+        }
+    }
+}
 
-    /// Allocate memory for tensor data
-    fn allocate<T: Num + Copy + Clone>(&self, shape: &[usize])
-    -> InfersResult<TensorData<Self, T>>;
+pub trait Backend<T>: Clone + Debug {
+    type Storage: Clone + Debug;
 
-    /// Copy data from a slice to this backend
-    fn copy_from<T: Num + Copy + Clone>(
-        &self,
-        data: &[T],
-        shape: &[usize],
-    ) -> InfersResult<TensorData<Self, T>>;
+    fn device() -> Device;
 
-    /// Copy data from this backend to a Vec
-    fn copy_to_vec<T: Num + Copy + Clone>(
-        &self,
-        data: &TensorData<Self, T>,
-    ) -> InfersResult<Vec<T>>;
+    fn init(data: &[T]) -> Self::Storage;
 
-    /// Transfer data from another backend to this one
-    fn transfer_from<SrcBackend: Backend, T: Num + Copy + Clone>(
-        &self,
-        src_backend: &SrcBackend,
-        src_data: &TensorData<SrcBackend, T>,
-    ) -> InfersResult<TensorData<Self, T>>;
+    fn zeros(size: usize) -> Self::Storage
+    where
+        T: Num + Clone;
 
-    fn instance() -> Self;
+    fn read(storage: &Self::Storage, index: usize) -> T;
 
-    fn name(&self) -> &str;
+    fn write(storage: &mut Self::Storage, index: usize, value: T);
 
-    fn add<T: Num + Copy + Clone>(
-        &self,
-        a: &TensorData<Self, T>,
-        b: &TensorData<Self, T>,
-    ) -> TensorData<Self, T>;
+    fn add(lhs: &Self::Storage, rhs: &Self::Storage) -> Self::Storage
+    where
+        T: Num + Clone + Copy;
 
-    // TODO: Add more methods
+    // TODO: More operations
 }

@@ -1,7 +1,5 @@
-pub mod backend;
-pub mod cpu;
-pub mod cuda;
+mod backend;
+mod cpu;
 
-pub use backend::*;
-pub use cpu::*;
-// pub use cuda::*;
+pub use backend::{Backend, Device};
+pub use cpu::Cpu;
