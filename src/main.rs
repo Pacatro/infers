@@ -3,11 +3,13 @@ mod tensor;
 
 use tensor::Tensor;
 
-use crate::backends::Cpu;
+use crate::backends::{Cpu, Cuda};
 
 pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
-    let t1 = Tensor::<Cpu, f32>::zeros(&[2, 2]);
-    println!("{t1}");
+    let t_cpu = Tensor::<Cpu, i32>::zeros(&[2, 2]);
+    let t_gpu = t_cpu.to::<Cuda>().unwrap();
+    println!("{}", t_gpu);
+    println!("{}", t_cpu);
 }

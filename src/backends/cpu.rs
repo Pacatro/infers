@@ -1,7 +1,10 @@
 use num_traits::Num;
 use std::fmt::Debug;
 
-use crate::backends::{Backend, Device};
+use crate::{
+    InfersResult,
+    backends::{Backend, Device},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu;
@@ -16,8 +19,8 @@ where
         Device::Cpu
     }
 
-    fn init(data: &[T]) -> Self::Storage {
-        data.to_vec()
+    fn init(data: &[T]) -> InfersResult<Self::Storage> {
+        Ok(data.to_vec())
     }
 
     fn zeros(size: usize) -> Self::Storage {
@@ -30,6 +33,13 @@ where
 
     fn write(storage: &mut Self::Storage, index: usize, value: T) {
         storage[index] = value;
+    }
+
+    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<T>>
+    where
+        T: Num + Clone + Copy,
+    {
+        Ok(storage.to_vec())
     }
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage) -> Self::Storage {

@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::ops;
 
+use crate::InfersResult;
 use crate::backends::{Backend, Device};
 
 #[derive(Debug, Clone)]
@@ -10,9 +11,9 @@ pub struct Tensor<B, T>
 where
     B: Backend<T>,
 {
-    pub storage: B::Storage,
     pub shape: Vec<usize>,
     pub strides: Vec<usize>,
+    storage: B::Storage,
     _backend: PhantomData<B>,
 }
 
@@ -31,23 +32,27 @@ where
     B: Backend<T>,
     T: Num + Clone + Copy + FromPrimitive + Debug,
 {
-    pub fn new(data: &[T], shape: &[usize]) -> Self {
+    pub fn new(data: &[T], shape: &[usize]) -> InfersResult<Self> {
         let size = shape.iter().product();
         assert_eq!(data.len(), size, "Data size mismatch");
 
         let strides = compute_strides(shape);
-        let storage = B::init(data);
+        let storage = B::init(data)?;
 
-        Self {
+        Ok(Self {
             storage,
             shape: shape.to_vec(),
             strides,
             _backend: PhantomData,
-        }
+        })
+    }
+
+    pub fn data(&self) -> InfersResult<Vec<T>> {
+        B::copy_to_host(&self.storage)
     }
 
     pub fn zeros(shape: &[usize]) -> Self {
-        let size: usize = shape.iter().product();
+        let size = shape.iter().product();
         let strides = compute_strides(shape);
         let storage = B::zeros(size);
 
@@ -70,7 +75,6 @@ where
 
     pub fn get(&self, indices: &[usize]) -> T {
         let idx = self.get_physical_index(indices);
-        // Delegamos la lectura al backend (crucial para GPU)
         B::read(&self.storage, idx)
     }
 
@@ -85,6 +89,15 @@ where
 
     pub fn len(&self) -> usize {
         self.shape.iter().product()
+    }
+
+    pub fn to<SrcB>(&self) -> InfersResult<Tensor<SrcB, T>>
+    where
+        SrcB: Backend<T>,
+        T: Num + Clone + Copy + FromPrimitive + Debug,
+    {
+        let host_data = B::copy_to_host(&self.storage)?;
+        Tensor::new(&host_data, &self.shape)
     }
 }
 
@@ -136,10 +149,15 @@ where
             );
         }
 
+        let data = match B::copy_to_host(&self.storage) {
+            Ok(data) => data,
+            Err(e) => return write!(f, "{:?}", e),
+        };
+
         write!(
             f,
             "Tensor(data={:?}, shape={:?}, device={}, dtype={})",
-            self.storage,
+            data,
             self.shape,
             B::device(),
             std::any::type_name::<T>()
@@ -149,16 +167,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::Cpu;
+    use crate::backends::{Cpu, Cuda};
 
     use super::*;
 
     #[test]
     fn test_tensor_new() {
-        let t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]);
+        let t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]).unwrap();
         assert_eq!(t.shape, &[2, 2]);
         assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.storage, &[1, 2, 3, 4]);
+        assert_eq!(t.data().unwrap(), vec![1, 2, 3, 4]);
         assert_eq!(t.device(), Device::Cpu);
     }
 
@@ -167,18 +185,18 @@ mod tests {
         let t = Tensor::<Cpu, i32>::zeros(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
         assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.storage.as_slice(), &[0, 0, 0, 0]);
+        assert_eq!(t.data().unwrap(), vec![0, 0, 0, 0]);
     }
 
     #[test]
     fn test_tensor_get() {
-        let t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]);
+        let t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]).unwrap();
         assert_eq!(t.get(&[0, 0]), 1);
     }
 
     #[test]
     fn test_tensor_set() {
-        let mut t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]);
+        let mut t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]).unwrap();
         assert_eq!(t.get(&[0, 0]), 1);
         t.set(&[0, 0], 10);
         assert_eq!(t.get(&[0, 0]), 10);
@@ -186,17 +204,28 @@ mod tests {
 
     #[test]
     fn test_tensor_add() {
-        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
+        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]).unwrap();
+        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]).unwrap();
         let t3: Tensor<Cpu, i32> = t1.add(&t2);
-        assert_eq!(t3.storage.as_slice(), &[6, 8, 10, 12]);
+        assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
     }
 
     #[test]
     fn test_tensor_add_ref() {
-        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
+        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]).unwrap();
+        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]).unwrap();
         let t3: Tensor<Cpu, i32> = &t1 + &t2;
-        assert_eq!(t3.storage.as_slice(), &[6, 8, 10, 12]);
+        assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_to_cuda() {
+        let t_cpu = Tensor::<Cpu, i32>::zeros(&[2, 2]);
+        let t_gpu = t_cpu.to::<Cuda>().unwrap();
+        assert_eq!(t_gpu.device(), Device::Cuda);
+        assert_eq!(t_gpu.shape, t_cpu.shape);
+        assert_eq!(t_gpu.strides, t_cpu.strides);
+        assert_eq!(t_gpu.data().unwrap(), t_cpu.data().unwrap());
     }
 }

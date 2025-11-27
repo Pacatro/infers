@@ -1,40 +1,40 @@
 use std::fmt::{Debug, Display};
 
-use num_traits::Num;
+use crate::InfersResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Device {
     Cpu,
-    Cuda(usize),
+    #[cfg(feature = "cuda")]
+    Cuda,
 }
 
 impl Display for Device {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Device::Cpu => write!(f, "cpu"),
-            Device::Cuda(id) => write!(f, "cuda:{}", id),
+            #[cfg(feature = "cuda")]
+            Device::Cuda => write!(f, "cuda"),
         }
     }
 }
 
-pub trait Backend<T>: Clone + Debug {
+pub trait Backend<T>: Clone + Debug + Copy {
     type Storage: Clone + Debug;
 
     fn device() -> Device;
 
-    fn init(data: &[T]) -> Self::Storage;
+    fn init(data: &[T]) -> InfersResult<Self::Storage>;
 
-    fn zeros(size: usize) -> Self::Storage
-    where
-        T: Num + Clone;
+    fn zeros(size: usize) -> Self::Storage;
 
     fn read(storage: &Self::Storage, index: usize) -> T;
 
     fn write(storage: &mut Self::Storage, index: usize, value: T);
 
-    fn add(lhs: &Self::Storage, rhs: &Self::Storage) -> Self::Storage
-    where
-        T: Num + Clone + Copy;
+    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<T>>;
+
+    fn add(lhs: &Self::Storage, rhs: &Self::Storage) -> Self::Storage;
 
     // TODO: More operations
 }
