@@ -54,7 +54,7 @@ where
     pub fn zeros(shape: &[usize]) -> Self {
         let size = shape.iter().product();
         let strides = compute_strides(shape);
-        let storage = B::zeros(size);
+        let storage = B::zeros(size).unwrap();
 
         Self {
             storage,

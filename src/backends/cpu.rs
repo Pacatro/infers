@@ -2,8 +2,8 @@ use num_traits::Num;
 use std::fmt::Debug;
 
 use crate::{
-    InfersResult,
     backends::{Backend, Device},
+    InfersResult,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -23,8 +23,8 @@ where
         Ok(data.to_vec())
     }
 
-    fn zeros(size: usize) -> Self::Storage {
-        vec![T::zero(); size]
+    fn zeros(size: usize) -> InfersResult<Self::Storage> {
+        Ok(vec![T::zero(); size])
     }
 
     fn read(storage: &Self::Storage, index: usize) -> T {

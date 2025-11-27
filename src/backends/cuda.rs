@@ -37,15 +37,15 @@ where
         })
     }
 
-    fn zeros(size: usize) -> Self::Storage {
-        let ctx = CudaContext::new(0).unwrap();
+    fn zeros(size: usize) -> InfersResult<Self::Storage> {
+        let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let slice: CudaSlice<T> = stream.alloc_zeros(size).unwrap();
 
-        CudaStorage {
+        Ok(CudaStorage {
             context: ctx,
             buffer: slice,
-        }
+        })
     }
 
     fn read(storage: &Self::Storage, index: usize) -> T {
