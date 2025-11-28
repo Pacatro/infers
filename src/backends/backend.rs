@@ -26,8 +26,6 @@ pub trait Backend<T>: Clone + Debug + Copy {
 
     fn init(data: &[T]) -> InfersResult<Self::Storage>;
 
-    fn zeros(size: usize) -> InfersResult<Self::Storage>;
-
     fn read(storage: &Self::Storage, index: usize) -> T;
 
     fn write(storage: &mut Self::Storage, index: usize, value: T);
