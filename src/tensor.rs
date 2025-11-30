@@ -432,7 +432,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::{Cpu, Cuda};
+    use crate::backends::Cpu;
+    #[cfg(feature = "cuda")]
+    use crate::backends::Cuda;
 
     use super::*;
 
@@ -485,10 +487,10 @@ mod tests {
     }
 
     #[test]
-    fn test_tensor_add() {
+    fn test_tensor_cpu_add() {
         let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
-        let t3: Tensor<Cpu, i32> = &t1 + &t2;
+        let t3 = &t1 + &t2;
         assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
     }
 
@@ -496,7 +498,7 @@ mod tests {
     fn test_tensor_add_ref() {
         let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
-        let t3: Tensor<Cpu, i32> = &t1 + &t2;
+        let t3 = &t1 + &t2;
         assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
     }
 

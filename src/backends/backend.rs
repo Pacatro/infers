@@ -118,6 +118,4 @@ pub trait Backend<T>: Clone + Debug + Copy {
     ///
     /// A new `Self::Storage` containing the result of `lhs + rhs`.
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
-
-    // TODO: More operations
 }
