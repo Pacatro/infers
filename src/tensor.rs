@@ -335,7 +335,7 @@ where
     }
 }
 
-impl<B> ops::Add for &Tensor<B, f32>
+impl<B> ops::Add for Tensor<B, f32>
 where
     B: Backend<f32>,
 {
@@ -369,7 +369,7 @@ where
     }
 }
 
-impl<B> ops::Sub for &Tensor<B, f32>
+impl<B> ops::Sub for Tensor<B, f32>
 where
     B: Backend<f32>,
 {
@@ -432,6 +432,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::backends::Cpu;
+
     #[cfg(feature = "cuda")]
     use crate::backends::Cuda;
 
@@ -489,7 +490,7 @@ mod tests {
     fn test_tensor_cpu_add() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = &t1 + &t2;
+        let t3 = t1 + t2;
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
     }
 
@@ -497,7 +498,7 @@ mod tests {
     fn test_tensor_cpu_sub() {
         let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = &t1 - &t2;
+        let t3 = t1 - t2;
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
     }
 
@@ -518,12 +519,11 @@ mod tests {
     fn test_tensor_add_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-
-        let t3 = &t1 + &t2;
+        let t3 = t1 + t2;
 
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
         assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, t1.shape);
+        assert_eq!(t3.shape, &[2, 2]);
     }
 
     #[test]
@@ -533,10 +533,10 @@ mod tests {
         let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
 
-        let t3 = &t1 - &t2;
+        let t3 = t1 - t2;
 
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
         assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, t1.shape);
+        assert_eq!(t3.shape, &[2, 2]);
     }
 }

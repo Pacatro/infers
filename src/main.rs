@@ -12,14 +12,16 @@ fn main() {
         let t1 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
         let t2 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
 
-        let t3 = &t1 + &t2;
+        let t3 = t1 + t2;
         println!("{t3}");
     }
 
     let t1 = Tensor::rand(&[2, 2]);
-    println!("t1: {}", t1);
     let t2 = Tensor::rand(&[2, 2]);
     println!("t1: {}", t1);
-    let t3 = &t1 + &t2;
+    println!("t1: {}", t1);
+
+    let t3 = t1 + t2;
     println!("{t3}");
+    println!("Tensor 3 shape: {:?}", t3.shape);
 }
