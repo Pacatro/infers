@@ -369,28 +369,29 @@ where
     }
 }
 
-impl<B, T> ops::AddAssign for Tensor<B, T>
+impl<B> ops::Sub for &Tensor<B, f32>
 where
-    B: Backend<T>,
-    T: Num + Clone + Copy + FromPrimitive + Debug + ops::AddAssign,
+    B: Backend<f32>,
 {
-    /// Performs in-place element-wise addition, modifying the left-hand side tensor.
-    ///
-    /// The operation is delegated to the backend's efficient `add` method, which
-    /// produces new storage that replaces the existing one in `self`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    fn add_assign(&mut self, rhs: Self) {
+    type Output = Tensor<B, f32>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.shape, rhs.shape);
+
         assert_eq!(
             self.device(),
             rhs.device(),
             "The two tensors must be on the same device."
         );
 
-        self.storage = B::add(&self.storage, &rhs.storage, self.size());
+        let new_storage = B::sub(&self.storage, &rhs.storage, self.size());
+
+        Self::Output {
+            storage: new_storage,
+            shape: self.shape.clone(),
+            strides: self.strides.clone(),
+            _backend: PhantomData,
+        }
     }
 }
 
@@ -472,13 +473,13 @@ mod tests {
 
     #[test]
     fn test_tensor_get() {
-        let t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]);
+        let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         assert_eq!(t.get(&[0, 0]), 1);
     }
 
     #[test]
     fn test_tensor_set() {
-        let mut t = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], &[2, 2]);
+        let mut t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         assert_eq!(t.get(&[0, 0]), 1);
         t.set(&[0, 0], 10);
         assert_eq!(t.get(&[0, 0]), 10);
@@ -490,6 +491,14 @@ mod tests {
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t3 = &t1 + &t2;
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
+    }
+
+    #[test]
+    fn test_tensor_cpu_sub() {
+        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
+        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t3 = &t1 - &t2;
+        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
     }
 
     #[test]
@@ -505,6 +514,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "cuda")]
+    #[ignore = "Cuda architecture is too old :'D"]
     fn test_tensor_add_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
@@ -512,6 +522,20 @@ mod tests {
         let t3 = &t1 + &t2;
 
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, t1.shape);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    #[ignore = "Cuda architecture is too old :'D"]
+    fn test_tensor_sub_cuda() {
+        let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+
+        let t3 = &t1 - &t2;
+
+        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
         assert_eq!(t3.device(), Device::Cuda);
         assert_eq!(t3.shape, t1.shape);
     }

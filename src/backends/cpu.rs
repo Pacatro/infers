@@ -6,6 +6,10 @@ use crate::{
     backends::{Backend, Device},
 };
 
+/// Represents the CPU backend.
+///
+/// This struct implements the `Backend` trait, providing all the necessary
+/// methods for managing data and performing operations on the CPU.
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu;
 
@@ -40,5 +44,9 @@ where
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
         lhs.iter().zip(rhs.iter()).map(|(&a, &b)| a + b).collect()
+    }
+
+    fn sub(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
+        lhs.iter().zip(rhs.iter()).map(|(&a, &b)| a - b).collect()
     }
 }

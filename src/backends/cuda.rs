@@ -1,5 +1,5 @@
 use cudarc::{
-    driver::{CudaContext, CudaSlice, LaunchConfig, PushKernelArg},
+    driver::{CudaContext, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg},
     nvrtc::compile_ptx,
 };
 
@@ -9,6 +9,17 @@ use crate::{
     InfersResult,
     backends::{Backend, Device},
 };
+
+/// Compiles a CUDA kernel from a string source.
+fn compile_kernel(
+    src: &str,
+    func_name: &str,
+    ctx: &Arc<CudaContext>,
+) -> InfersResult<CudaFunction> {
+    let ptx = compile_ptx(src)?;
+    let module = ctx.load_module(ptx)?;
+    module.load_function(func_name).map_err(|e| e.into())
+}
 
 /// Device-specific storage structure for the CUDA backend.
 ///
@@ -74,21 +85,41 @@ impl Backend<f32> for Cuda {
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
         let ctx = lhs.context.clone();
-
-        // FIXME: Can't compile to ptx because gpu arch is so fucking old.
-        // After Cuda 13.x, nvcc stops supporting PASCAL architecture.
-        // Which meand that my gtx 1060 is useless for this project.
-        // My gpu is useless even for programming now :'D.
-        let ptx = compile_ptx(include_str!("../../kernels/add.cu")).unwrap();
-
         let stream = ctx.default_stream();
 
-        let module = ctx.load_module(ptx).unwrap();
-        let func = module.load_function("add").unwrap();
-
-        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
+        // FIXME: Can't compile to ptx because gpu architecture is so fucking old.
+        // After Cuda 13.x, nvcc stops supporting PASCAL architecture.
+        // Which means that my gtx 1060 is useless for this project.
+        // My gpu is useless even for programming now :'D.
+        let func = compile_kernel(include_str!("../../kernels/add.cu"), "add", &ctx).unwrap();
 
         let config = LaunchConfig::for_num_elems(size as u32);
+        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&lhs.buffer)
+                .arg(&rhs.buffer)
+                .arg(&mut out_device)
+                .arg(&size)
+                .launch(config)
+                .unwrap();
+        }
+
+        CudaStorage {
+            context: ctx,
+            buffer: out_device,
+        }
+    }
+
+    fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
+        let ctx = lhs.context.clone();
+        let stream = ctx.default_stream();
+
+        let func = compile_kernel(include_str!("../../kernels/sub.cu"), "sub", &ctx).unwrap();
+
+        let config = LaunchConfig::for_num_elems(size as u32);
+        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
         unsafe {
             stream
                 .launch_builder(&func)

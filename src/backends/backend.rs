@@ -6,9 +6,10 @@ use crate::InfersResult;
 ///
 /// This enum allows the system to differentiate between standard CPU processing
 /// and acceleration devices like CUDA-enabled GPUs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Device {
     /// Standard Central Processing Unit.
+    #[default]
     Cpu,
     /// NVIDIA GPU using the CUDA framework.
     #[cfg(feature = "cuda")]
@@ -113,9 +114,27 @@ pub trait Backend<T>: Clone + Debug + Copy {
     ///
     /// * `lhs`: The left-hand side operand storage.
     /// * `rhs`: The right-hand side operand storage.
+    /// * `size`: The number of elements in the storage
     ///
     /// # Returns
     ///
     /// A new `Self::Storage` containing the result of `lhs + rhs`.
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+
+    /// Performs an element-wise subtraction of two device storage blocks.
+    ///
+    /// The result is stored in a newly allocated device storage block. This operation
+    /// should be optimized to run entirely on the target device (e.g., using CUDA kernels
+    /// for a GPU backend).
+    ///
+    /// # Arguments
+    ///
+    /// * `lhs`: The left-hand side operand storage.
+    /// * `rhs`: The right-hand side operand storage.
+    /// * `size`: The number of elements in the storage
+    ///
+    /// # Returns
+    ///
+    /// A new `Self::Storage` containing the result of `lhs - rhs`.
+    fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
 }
