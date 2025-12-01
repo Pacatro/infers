@@ -327,21 +327,19 @@ where
     pub fn to<SrcB>(&self) -> InfersResult<Tensor<SrcB, T>>
     where
         SrcB: Backend<T>,
-        T: Num + Clone + Copy + FromPrimitive + Debug,
     {
-        // 1. Copy data from current device (B) to host (CPU)
+        // Copy data from current device (B) to host (CPU)
         let host_data = B::copy_to_host(&self.storage)?;
-        // 2. Initialize new tensor on target device (SrcB) from host data
+        // Initialize new tensor on target device (SrcB) from host data
         Tensor::from_data(&host_data, &self.shape)
     }
 }
 
-impl<B, T> ops::Add for &Tensor<B, T>
+impl<B> ops::Add for &Tensor<B, f32>
 where
-    B: Backend<T>,
-    T: Num + Clone + Copy + FromPrimitive + Debug + ops::AddAssign,
+    B: Backend<f32>,
 {
-    type Output = Tensor<B, T>;
+    type Output = Tensor<B, f32>;
 
     /// Performs element-wise addition between two tensors on the same device.
     ///
@@ -488,18 +486,10 @@ mod tests {
 
     #[test]
     fn test_tensor_cpu_add() {
-        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t3 = &t1 + &t2;
-        assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
-    }
-
-    #[test]
-    fn test_tensor_add_ref() {
-        let t1 = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        let t2 = Tensor::new(&[5, 6, 7, 8], &[2, 2]);
-        let t3 = &t1 + &t2;
-        assert_eq!(t3.data().unwrap(), vec![6, 8, 10, 12]);
+        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
     }
 
     #[test]
@@ -511,5 +501,18 @@ mod tests {
         assert_eq!(t_gpu.shape, t_cpu.shape);
         assert_eq!(t_gpu.strides, t_cpu.strides);
         assert_eq!(t_gpu.data().unwrap(), t_cpu.data().unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_add_cuda() {
+        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
+
+        let t3 = &t1 + &t2;
+
+        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, t1.shape);
     }
 }

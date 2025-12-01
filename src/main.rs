@@ -11,10 +11,15 @@ pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn main() {
     #[cfg(feature = "cuda")]
     {
-        let t_cpu = Tensor::rand(&[2, 2]);
-        let t_gpu = t_cpu.to::<Cuda>().unwrap();
-        println!("{}", t_cpu);
-        println!("{}", t_gpu);
+        // let t_cpu = Tensor::rand(&[2, 2]);
+        // let t_gpu = t_cpu.to::<Cuda>().unwrap();
+        // println!("{}", t_cpu);
+        // println!("{}", t_gpu);
+        let t1 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
+        let t2 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
+
+        let t3 = &t1 + &t2;
+        println!("{t3}");
     }
 
     let mut t1 = Tensor::rand(&[2, 2]);

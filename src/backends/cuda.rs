@@ -1,8 +1,8 @@
 use cudarc::{
-    driver::{CudaContext, CudaSlice, DeviceRepr, LaunchConfig, PushKernelArg, ValidAsZeroBits},
+    driver::{CudaContext, CudaSlice, LaunchConfig, PushKernelArg},
     nvrtc::compile_ptx,
 };
-use num_traits::Num;
+
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
@@ -18,11 +18,11 @@ use crate::{
 ///
 /// * `T`: The element type, which must be representable on a CUDA device.
 #[derive(Debug, Clone)]
-pub struct CudaStorage<T: DeviceRepr> {
+pub struct CudaStorage {
     /// The CUDA context, shared via `Arc` to manage device resources.
     context: Arc<CudaContext>,
     /// The actual memory buffer stored on the CUDA device.
-    buffer: CudaSlice<T>,
+    buffer: CudaSlice<f32>,
 }
 
 /// The CUDA backend implementation.
@@ -32,17 +32,14 @@ pub struct CudaStorage<T: DeviceRepr> {
 #[derive(Debug, Clone, Copy)]
 pub struct Cuda;
 
-impl<T> Backend<T> for Cuda
-where
-    T: Num + Clone + Copy + Debug + DeviceRepr + ValidAsZeroBits,
-{
-    type Storage = CudaStorage<T>;
+impl Backend<f32> for Cuda {
+    type Storage = CudaStorage;
 
     fn device() -> Device {
         Device::Cuda
     }
 
-    fn init(data: &[T]) -> InfersResult<Self::Storage> {
+    fn init(data: &[f32]) -> InfersResult<Self::Storage> {
         let ctx = CudaContext::new(0)?;
         let stream = ctx.default_stream();
         let slice = stream.clone_htod(data)?;
@@ -53,21 +50,21 @@ where
         })
     }
 
-    fn read(storage: &Self::Storage, index: usize) -> T {
+    fn read(storage: &Self::Storage, index: usize) -> f32 {
         let stream = storage.context.default_stream();
-        let host_buf = vec![T::zero(); storage.buffer.len()];
+        let host_buf = vec![0.0; storage.buffer.len()];
         stream.clone_dtoh(&storage.buffer).unwrap();
         host_buf[index]
     }
 
-    fn write(storage: &mut Self::Storage, index: usize, value: T) {
+    fn write(storage: &mut Self::Storage, index: usize, value: f32) {
         let stream = storage.context.default_stream();
         let mut host_buf = stream.clone_dtoh(&storage.buffer).expect("DTOH failed");
         host_buf[index] = value;
         storage.buffer = stream.clone_htod(&host_buf).expect("HTOD failed");
     }
 
-    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<T>> {
+    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<f32>> {
         storage
             .context
             .default_stream()
@@ -76,33 +73,36 @@ where
     }
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        todo!()
+        let ctx = lhs.context.clone();
 
-        // let ptx = compile_ptx("../kernels/add.cu").unwrap();
-        //
-        // let ctx = lhs.context.clone();
-        // let stream = ctx.default_stream();
-        //
-        // let module = ctx.load_module(ptx).unwrap();
-        // let func = module.load_function("add").unwrap();
-        //
-        // let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
-        //
-        // let config = LaunchConfig::for_num_elems(size as u32);
-        // let launch = stream
-        //     .launch_builder(&func)
-        //     .arg(&lhs.buffer)
-        //     .arg(&rhs.buffer)
-        //     .arg(&mut out_device)
-        //     .arg(&size);
-        //
-        // unsafe {
-        //     launch.launch(config).unwrap();
-        // }
-        //
-        // CudaStorage {
-        //     context: ctx,
-        //     buffer: out_device,
-        // }
+        // FIXME: Can't compile to ptx because gpu arch is so fucking old.
+        // After Cuda 13.x, nvcc stops supporting PASCAL architecture.
+        // Which meand that my gtx 1060 is useless for this project.
+        // My gpu is useless even for programming now :'D.
+        let ptx = compile_ptx(include_str!("../../kernels/add.cu")).unwrap();
+
+        let stream = ctx.default_stream();
+
+        let module = ctx.load_module(ptx).unwrap();
+        let func = module.load_function("add").unwrap();
+
+        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
+
+        let config = LaunchConfig::for_num_elems(size as u32);
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&lhs.buffer)
+                .arg(&rhs.buffer)
+                .arg(&mut out_device)
+                .arg(&size)
+                .launch(config)
+                .unwrap();
+        }
+
+        CudaStorage {
+            context: ctx,
+            buffer: out_device,
+        }
     }
 }
