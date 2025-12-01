@@ -3,18 +3,12 @@ mod tensor;
 
 use tensor::Tensor;
 
-#[cfg(feature = "cuda")]
-use crate::backends::Cuda;
-
 pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
     #[cfg(feature = "cuda")]
     {
-        // let t_cpu = Tensor::rand(&[2, 2]);
-        // let t_gpu = t_cpu.to::<Cuda>().unwrap();
-        // println!("{}", t_cpu);
-        // println!("{}", t_gpu);
+        use crate::backends::Cuda;
         let t1 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
         let t2 = Tensor::rand(&[2, 2]).to::<Cuda>().unwrap();
 
@@ -22,10 +16,10 @@ fn main() {
         println!("{t3}");
     }
 
-    let mut t1 = Tensor::rand(&[2, 2]);
+    let t1 = Tensor::rand(&[2, 2]);
     println!("t1: {}", t1);
     let t2 = Tensor::rand(&[2, 2]);
-    println!("t2: {}", t2);
-    t1 += t2;
     println!("t1: {}", t1);
+    let t3 = &t1 + &t2;
+    println!("{t3}");
 }
