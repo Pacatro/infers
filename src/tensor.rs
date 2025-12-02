@@ -52,6 +52,8 @@ where
     /// The number of elements to skip in the linear storage to advance one unit
     /// along each dimension.
     pub strides: Vec<usize>,
+    /// The total number of elements in the tensor.
+    pub size: usize,
     /// The underlying device-specific storage for the tensor data.
     storage: B::Storage,
     /// Marker to hold the backend type without storing data.
@@ -95,6 +97,7 @@ where
         Self {
             storage,
             shape: shape.to_vec(),
+            size,
             strides,
             _backend: PhantomData,
         }
@@ -118,6 +121,7 @@ where
         Self {
             storage,
             shape: shape.to_vec(),
+            size,
             strides,
             _backend: PhantomData,
         }
@@ -141,6 +145,7 @@ where
         Self {
             storage,
             shape: shape.to_vec(),
+            size,
             strides,
             _backend: PhantomData,
         }
@@ -170,6 +175,7 @@ impl Tensor<Cpu, f32> {
         Self {
             storage: data,
             shape: shape.to_vec(),
+            size,
             strides,
             _backend: PhantomData,
         }
@@ -200,6 +206,7 @@ impl Tensor<Cpu, f32> {
         Tensor {
             storage: data,
             shape: shape.to_vec(),
+            size,
             strides,
             _backend: PhantomData,
         }
@@ -235,6 +242,7 @@ where
             storage,
             shape: shape.to_vec(),
             strides,
+            size,
             _backend: PhantomData,
         })
     }
@@ -248,11 +256,6 @@ where
     /// A `Result` containing the data as a linear `Vec<T>` on the host.
     pub fn data(&self) -> InfersResult<Vec<T>> {
         B::copy_to_host(&self.storage)
-    }
-
-    /// Returns the number of elements in the tensor.
-    pub fn size(&self) -> usize {
-        self.shape.iter().product()
     }
 
     /// Converts a multi-dimensional index tuple into a single linear (physical) index
@@ -363,12 +366,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::add(&self.storage, &rhs.storage, self.size());
+        let new_storage = B::add(&self.storage, &rhs.storage, self.size);
 
         Self::Output {
             storage: new_storage,
             shape: self.shape.clone(),
             strides: self.strides.clone(),
+            size: self.size,
             _backend: PhantomData,
         }
     }
@@ -389,12 +393,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::sub(&self.storage, &rhs.storage, self.size());
+        let new_storage = B::sub(&self.storage, &rhs.storage, self.size);
 
         Self::Output {
             storage: new_storage,
             shape: self.shape.clone(),
             strides: self.strides.clone(),
+            size: self.size,
             _backend: PhantomData,
         }
     }
@@ -447,6 +452,7 @@ mod tests {
     fn test_tensor_new() {
         let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
+        assert_eq!(t.size, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 2, 3, 4]);
         assert_eq!(t.device(), Device::Cpu);
@@ -456,6 +462,7 @@ mod tests {
     fn test_tensor_zeros() {
         let t = Tensor::<Cpu, i32>::zeros(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
+        assert_eq!(t.size, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![0, 0, 0, 0]);
     }
@@ -464,6 +471,7 @@ mod tests {
     fn test_tensor_ones() {
         let t = Tensor::<Cpu, i32>::ones(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
+        assert_eq!(t.size, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 1, 1, 1]);
     }
@@ -472,6 +480,7 @@ mod tests {
     fn test_tensor_rand() {
         let t = Tensor::rand(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
+        assert_eq!(t.size, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.len(), 4);
         assert_eq!(t.device(), Device::Cpu);
@@ -514,6 +523,7 @@ mod tests {
         let t_gpu = t_cpu.to::<Cuda>().unwrap();
         assert_eq!(t_gpu.device(), Device::Cuda);
         assert_eq!(t_gpu.shape, t_cpu.shape);
+        assert_eq!(t_gpu.size, t_cpu.size);
         assert_eq!(t_gpu.strides, t_cpu.strides);
         assert_eq!(t_gpu.data().unwrap(), t_cpu.data().unwrap());
     }
