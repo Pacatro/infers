@@ -515,7 +515,6 @@ mod tests {
 
     #[test]
     #[cfg(feature = "cuda")]
-    #[ignore = "Cuda architecture is too old :'D"]
     fn test_tensor_add_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
@@ -528,7 +527,6 @@ mod tests {
 
     #[test]
     #[cfg(feature = "cuda")]
-    #[ignore = "Cuda architecture is too old :'D"]
     fn test_tensor_sub_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
