@@ -1,6 +1,7 @@
 use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
+use rayon::prelude::*;
 use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::ops;
@@ -162,6 +163,7 @@ impl Tensor<Cpu, f32> {
         let strides = compute_strides(shape);
 
         let data = (0..size)
+            .into_par_iter()
             .map(|_| rand::random::<f32>())
             .collect::<Vec<f32>>();
 
@@ -186,10 +188,13 @@ impl Tensor<Cpu, f32> {
     pub fn randn(shape: &[usize]) -> Self {
         let size: usize = shape.iter().product();
         let strides = compute_strides(shape);
-        let mut rng = rand::rng();
 
         let data = (0..size)
-            .map(|_| rng.sample(StandardNormal))
+            .into_par_iter()
+            .map(|_| {
+                let mut rng = rand::rng();
+                rng.sample(StandardNormal)
+            })
             .collect::<Vec<f32>>();
 
         Tensor {

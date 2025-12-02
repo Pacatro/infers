@@ -1,4 +1,5 @@
 use num_traits::Num;
+use rayon::prelude::*;
 use std::fmt::Debug;
 
 use crate::{
@@ -15,7 +16,7 @@ pub struct Cpu;
 
 impl<T> Backend<T> for Cpu
 where
-    T: Num + Clone + Copy + Debug,
+    T: Num + Clone + Copy + Debug + Send + Sync,
 {
     type Storage = Vec<T>;
 
@@ -43,10 +44,16 @@ where
     }
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
-        lhs.iter().zip(rhs.iter()).map(|(&a, &b)| a + b).collect()
+        lhs.par_iter()
+            .zip(rhs.par_iter())
+            .map(|(&a, &b)| a + b)
+            .collect()
     }
 
     fn sub(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
-        lhs.iter().zip(rhs.iter()).map(|(&a, &b)| a - b).collect()
+        lhs.par_iter()
+            .zip(rhs.par_iter())
+            .map(|(&a, &b)| a - b)
+            .collect()
     }
 }
