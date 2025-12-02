@@ -35,7 +35,8 @@ impl Display for Device {
 ///
 /// The generic parameter `T` represents the element type stored by the backend
 /// (e.g., f32, i32).
-pub trait Backend<T>: Clone + Debug + Copy {
+#[allow(dead_code)]
+pub(crate) trait Backend<T>: Clone + Debug + Copy {
     /// The device-specific memory storage type.
     ///
     /// This might be a `Vec<T>` for the CPU backend, or a GPU buffer type
@@ -137,4 +138,6 @@ pub trait Backend<T>: Clone + Debug + Copy {
     ///
     /// A new `Self::Storage` containing the result of `lhs - rhs`.
     fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+
+    fn relu(input: &Self::Storage, size: usize) -> Self::Storage;
 }

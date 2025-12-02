@@ -29,7 +29,7 @@ fn compile_kernel(
 ///
 /// * `T`: The element type, which must be representable on a CUDA device.
 #[derive(Debug, Clone)]
-pub struct CudaStorage {
+pub(crate) struct CudaStorage {
     /// The CUDA context, shared via `Arc` to manage device resources.
     context: Arc<CudaContext>,
     /// The actual memory buffer stored on the CUDA device.
@@ -41,7 +41,7 @@ pub struct CudaStorage {
 /// This struct implements the `Backend` trait, providing all the necessary
 /// methods for managing data and performing operations on an NVIDIA GPU.
 #[derive(Debug, Clone, Copy)]
-pub struct Cuda;
+pub(crate) struct Cuda;
 
 impl Backend<f32> for Cuda {
     type Storage = CudaStorage;
@@ -121,6 +121,31 @@ impl Backend<f32> for Cuda {
                 .launch_builder(&func)
                 .arg(&lhs.buffer)
                 .arg(&rhs.buffer)
+                .arg(&mut out_device)
+                .arg(&size)
+                .launch(config)
+                .unwrap();
+        }
+
+        CudaStorage {
+            context: ctx,
+            buffer: out_device,
+        }
+    }
+
+    fn relu(input: &Self::Storage, size: usize) -> Self::Storage {
+        let ctx = input.context.clone();
+        let stream = ctx.default_stream();
+
+        let func = compile_kernel(include_str!("../../kernels/relu.cu"), "relu", &ctx).unwrap();
+
+        let config = LaunchConfig::for_num_elems(size as u32);
+        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
+
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&input.buffer)
                 .arg(&mut out_device)
                 .arg(&size)
                 .launch(config)

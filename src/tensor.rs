@@ -322,6 +322,16 @@ where
         // Initialize new tensor on target device (SrcB) from host data
         Tensor::from_data(&host_data, &self.shape)
     }
+
+    pub fn relu(&self) -> Self {
+        Self {
+            storage: B::relu(&self.storage, self.size),
+            shape: self.shape.clone(),
+            strides: self.strides.clone(),
+            size: self.size,
+            _backend: PhantomData,
+        }
+    }
 }
 
 impl<B, T> ops::Add for Tensor<B, T>
@@ -484,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tensor_cpu_add() {
+    fn test_tensor_add_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t3 = t1 + t2;
@@ -492,11 +502,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tensor_cpu_sub() {
+    fn test_tensor_sub_cpu() {
         let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t3 = t1 - t2;
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
+    }
+
+    #[test]
+    fn test_tensor_relu_cpu() {
+        let t = Tensor::new(&[-1., -2., 3., 4.], &[2, 2]);
+        let t = t.relu();
+        assert_eq!(t.data().unwrap(), vec![0., 0., 3., 4.]);
+        assert_eq!(t.device(), Device::Cpu);
+        assert_eq!(t.shape, &[2, 2]);
     }
 
     #[test]
@@ -534,5 +553,15 @@ mod tests {
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
         assert_eq!(t3.device(), Device::Cuda);
         assert_eq!(t3.shape, &[2, 2]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_relu_cuda() {
+        let t = Tensor::<Cuda, f32>::from_data(&[-1., -2., 3., 4.], &[2, 2]).unwrap();
+        let t = t.relu();
+        assert_eq!(t.data().unwrap(), vec![0., 0., 3., 4.]);
+        assert_eq!(t.device(), Device::Cuda);
+        assert_eq!(t.shape, &[2, 2]);
     }
 }

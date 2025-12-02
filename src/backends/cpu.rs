@@ -12,11 +12,11 @@ use crate::{
 /// This struct implements the `Backend` trait, providing all the necessary
 /// methods for managing data and performing operations on the CPU.
 #[derive(Debug, Clone, Copy)]
-pub struct Cpu;
+pub(crate) struct Cpu;
 
 impl<T> Backend<T> for Cpu
 where
-    T: Num + Clone + Copy + Debug + Send + Sync,
+    T: Num + Clone + Copy + Debug + Send + Sync + PartialOrd,
 {
     type Storage = Vec<T>;
 
@@ -54,6 +54,16 @@ where
         lhs.par_iter()
             .zip(rhs.par_iter())
             .map(|(&a, &b)| a - b)
+            .collect()
+    }
+
+    fn relu(input: &Self::Storage, _size: usize) -> Self::Storage {
+        input
+            .par_iter()
+            .map(|&x| {
+                let zero = T::zero();
+                if x > zero { x } else { zero }
+            })
             .collect()
     }
 }
