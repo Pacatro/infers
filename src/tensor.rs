@@ -1,4 +1,4 @@
-use num_traits::{FromPrimitive, Num};
+use num_traits::{Float, FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
@@ -40,119 +40,27 @@ fn compute_strides(shape: &[usize]) -> Vec<usize> {
 ///
 /// # Type Parameters
 ///
-/// * `B`: The backend implementation (e.g., `Cpu`, `Cuda`).
-/// * `T`: The element data type (e.g., `f32`, `i32`).
+/// * `B`: The backend implementation (e.g., `Cpu`, `Cuda`). Defaults to `Cpu`.
+/// * `T`: The element data type (e.g., `f32`, `i32`). Defaults to `f32`.
 #[derive(Debug, Clone)]
-pub struct Tensor<B, T>
+pub(crate) struct Tensor<B = Cpu, T = f32>
 where
     B: Backend<T>,
 {
     /// The size of the tensor along each dimension (e.g., `[rows, columns]`).
     pub shape: Vec<usize>,
-    /// The number of elements to skip in the linear storage to advance one unit
-    /// along each dimension.
+    /// The number of elements to skip in the linear storage to advance one unit along each dimension.
     pub strides: Vec<usize>,
     /// The total number of elements in the tensor.
-    pub size: usize,
+    size: usize,
     /// The underlying device-specific storage for the tensor data.
     storage: B::Storage,
     /// Marker to hold the backend type without storing data.
     _backend: PhantomData<B>,
 }
 
-// --- CPU-Specific Constructors (Specialized for Backend=Cpu) ---
-
-impl<T> Tensor<Cpu, T>
-where
-    Cpu: Backend<T, Storage = Vec<T>>,
-    T: Num + Clone + Copy + FromPrimitive + Debug,
-{
-    /// Creates a new CPU tensor from a linear data buffer and a shape.
-    ///
-    /// The data buffer is copied directly into the tensor's storage.
-    ///
-    /// # Arguments
-    ///
-    /// * `data`: The flat array of data elements.
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length of `data` does not match the total size implied by `shape`.
-    pub fn new(data: &[T], shape: &[usize]) -> Self {
-        let size = shape.iter().product();
-
-        assert_eq!(
-            data.len(),
-            size,
-            "Data size mismatch: expected {} elements for shape {:?}, got {}",
-            size,
-            shape,
-            data.len()
-        );
-
-        let strides = compute_strides(shape);
-        let storage = data.to_vec();
-
-        Self {
-            storage,
-            shape: shape.to_vec(),
-            size,
-            strides,
-            _backend: PhantomData,
-        }
-    }
-
-    /// Creates a new CPU tensor initialized with zeros.
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of the specified shape filled with the zero element of type `T`.
-    pub fn zeros(shape: &[usize]) -> Self {
-        let size = shape.iter().product();
-
-        let strides = compute_strides(shape);
-        let storage = vec![T::zero(); size];
-
-        Self {
-            storage,
-            shape: shape.to_vec(),
-            size,
-            strides,
-            _backend: PhantomData,
-        }
-    }
-
-    /// Creates a new CPU tensor initialized with ones.
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of the specified shape filled with the one element of type `T`.
-    pub fn ones(shape: &[usize]) -> Self {
-        let size = shape.iter().product();
-
-        let strides = compute_strides(shape);
-        let storage = vec![T::one(); size];
-
-        Self {
-            storage,
-            shape: shape.to_vec(),
-            size,
-            strides,
-            _backend: PhantomData,
-        }
-    }
-}
-
-impl Tensor<Cpu, f32> {
+#[allow(dead_code)]
+impl Tensor {
     /// Creates a new CPU tensor initialized with random numbers uniformly distributed
     /// between 0.0 and 1.0.
     ///
@@ -213,10 +121,87 @@ impl Tensor<Cpu, f32> {
     }
 }
 
+#[allow(dead_code)]
+impl<T> Tensor<Cpu, T>
+where
+    Cpu: Backend<T, Storage = Vec<T>>,
+    T: Num + Clone + Copy + FromPrimitive + Debug,
+{
+    /// Creates a new CPU tensor from a linear data buffer and a shape.
+    ///
+    /// The data buffer is copied directly into the tensor's storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: The flat array of data elements.
+    /// * `shape`: The multi-dimensional shape of the tensor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of `data` does not match the total size implied by `shape`.
+    pub fn new(data: &[T], shape: &[usize]) -> Self {
+        let size = shape.iter().product();
+        assert_eq!(data.len(), size, "Data size mismatch for shape {:?}", shape);
+
+        Self {
+            storage: data.to_vec(),
+            shape: shape.to_vec(),
+            strides: compute_strides(shape),
+            size,
+            _backend: PhantomData,
+        }
+    }
+
+    /// Creates a new CPU tensor initialized with zeros.
+    ///
+    /// # Arguments
+    ///
+    /// * `shape`: The multi-dimensional shape of the tensor.
+    ///
+    /// # Returns
+    ///
+    /// A tensor of the specified shape filled with the zero element of type `T`.
+    pub fn zeros(shape: &[usize]) -> Self {
+        let size = shape.iter().product();
+        Self {
+            storage: vec![T::zero(); size],
+            shape: shape.to_vec(),
+            strides: compute_strides(shape),
+            size,
+            _backend: PhantomData,
+        }
+    }
+
+    /// Creates a new CPU tensor initialized with ones.
+    ///
+    /// # Arguments
+    ///
+    /// * `shape`: The multi-dimensional shape of the tensor.
+    ///
+    /// # Returns
+    ///
+    /// A tensor of the specified shape filled with the one element of type `T`.
+    pub fn ones(shape: &[usize]) -> Self {
+        let size = shape.iter().product();
+
+        let strides = compute_strides(shape);
+        let storage = vec![T::one(); size];
+
+        Self {
+            storage,
+            shape: shape.to_vec(),
+            size,
+            strides,
+            _backend: PhantomData,
+        }
+    }
+}
+
+#[allow(dead_code)]
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
-    T: Num + Clone + Copy + FromPrimitive + Debug,
+    T: Num + FromPrimitive + Clone + Copy + FromPrimitive + Debug,
 {
     /// Creates a tensor on the specified backend from host data.
     ///
@@ -234,14 +219,10 @@ where
     pub fn from_data(data: &[T], shape: &[usize]) -> InfersResult<Self> {
         let size = shape.iter().product();
         assert_eq!(data.len(), size, "Data size mismatch");
-
-        let strides = compute_strides(shape);
-        let storage = B::init(data)?;
-
         Ok(Self {
-            storage,
+            storage: B::init(data)?,
             shape: shape.to_vec(),
-            strides,
+            strides: compute_strides(shape),
             size,
             _backend: PhantomData,
         })
@@ -273,7 +254,7 @@ where
     ///
     /// Panics if the number of indices does not match the tensor's rank (`shape.len()`).
     fn get_physical_index(&self, indices: &[usize]) -> usize {
-        assert_eq!(indices.len(), self.shape.len());
+        assert_eq!(indices.len(), self.shape.len(), "Index rank mismatch");
         let mut physical_idx = 0;
         for (i, &idx) in indices.iter().enumerate() {
             physical_idx += idx * self.strides[i];
@@ -317,7 +298,7 @@ where
 
     /// Returns the total number of elements in the tensor (the product of all dimensions).
     pub fn len(&self) -> usize {
-        self.shape.iter().product()
+        self.size
     }
 
     /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).
@@ -343,11 +324,12 @@ where
     }
 }
 
-impl<B> ops::Add for Tensor<B, f32>
+impl<B, T> ops::Add for Tensor<B, T>
 where
-    B: Backend<f32>,
+    B: Backend<T>,
+    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
 {
-    type Output = Tensor<B, f32>;
+    type Output = Tensor<B, T>;
 
     /// Performs element-wise addition between two tensors on the same device.
     ///
@@ -378,11 +360,12 @@ where
     }
 }
 
-impl<B> ops::Sub for Tensor<B, f32>
+impl<B, T> ops::Sub for Tensor<B, T>
 where
-    B: Backend<f32>,
+    B: Backend<T>,
+    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
 {
-    type Output = Tensor<B, f32>;
+    type Output = Tensor<B, T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.shape, rhs.shape);
@@ -478,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_tensor_rand() {
-        let t = Tensor::rand(&[2, 2]);
+        let t = Tensor::<Cpu, f32>::rand(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
         assert_eq!(t.size, 4);
         assert_eq!(t.strides, &[2, 1]);
