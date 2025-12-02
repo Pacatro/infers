@@ -87,10 +87,6 @@ impl Backend<f32> for Cuda {
         let ctx = lhs.context.clone();
         let stream = ctx.default_stream();
 
-        // FIXME: Can't compile to ptx because gpu architecture is so fucking old.
-        // After Cuda 13.x, nvcc stops supporting PASCAL architecture.
-        // Which means that my gtx 1060 is useless for this project.
-        // My gpu is useless even for programming now :'D.
         let func = compile_kernel(include_str!("../../kernels/add.cu"), "add", &ctx).unwrap();
 
         let config = LaunchConfig::for_num_elems(size as u32);
