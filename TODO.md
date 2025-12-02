@@ -11,6 +11,10 @@ Inspirations:
 - [x] Tensor structure
 - [x] CUDA support
 - [ ] Operations
+  - [x] Add
+  - [x] Relu
+  - [x] Flatten
+  - [ ] Gemm
 - [ ] Load ONNX model
 - [ ] Construct computational graph
 - [ ] Run inference with user inputs
