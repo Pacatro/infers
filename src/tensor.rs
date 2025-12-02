@@ -332,6 +332,16 @@ where
             _backend: PhantomData,
         }
     }
+
+    pub fn flatten(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            shape: vec![self.size],
+            strides: vec![1],
+            size: self.size,
+            _backend: PhantomData,
+        }
+    }
 }
 
 impl<B, T> ops::Add for Tensor<B, T>
@@ -519,6 +529,16 @@ mod tests {
     }
 
     #[test]
+    fn test_tensor_flatten_cpu() {
+        let t = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t = t.flatten();
+        assert_eq!(t.shape, &[4]);
+        assert_eq!(t.strides, &[1]);
+        assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
+        assert_eq!(t.device(), Device::Cpu);
+    }
+
+    #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_to_cuda() {
         let t_cpu = Tensor::rand(&[2, 2]);
@@ -563,5 +583,16 @@ mod tests {
         assert_eq!(t.data().unwrap(), vec![0., 0., 3., 4.]);
         assert_eq!(t.device(), Device::Cuda);
         assert_eq!(t.shape, &[2, 2]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_flatten_cuda() {
+        let t = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t = t.flatten();
+        assert_eq!(t.shape, &[4]);
+        assert_eq!(t.strides, &[1]);
+        assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
+        assert_eq!(t.device(), Device::Cuda);
     }
 }
