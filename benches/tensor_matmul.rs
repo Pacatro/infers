@@ -2,11 +2,12 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use infers::Tensor;
 use std::hint::black_box;
 
-fn bench_matmul_cpu(c: &mut Criterion) {
-    let size = 900;
-    let mut group = c.benchmark_group(format!("matmul {}x{}", size, size));
+const SIZE: usize = 200;
 
-    group.bench_with_input(BenchmarkId::new("CPU", size), &size, |b, &size| {
+fn bench_matmul_cpu(c: &mut Criterion) {
+    let mut group = c.benchmark_group(format!("matmul {}x{}", SIZE, SIZE));
+
+    group.bench_with_input(BenchmarkId::new("CPU", SIZE), &SIZE, |b, &size| {
         let t1 = Tensor::rand(&[size, size]);
         let t2 = Tensor::rand(&[size, size]);
 
@@ -23,10 +24,9 @@ fn bench_matmul_cpu(c: &mut Criterion) {
 fn bench_matmul_cuda(c: &mut Criterion) {
     use infers::backends::Cuda;
 
-    let mut group = c.benchmark_group("matmul 900x900");
-    let size = 900;
+    let mut group = c.benchmark_group(format!("matmul {}x{}", SIZE, SIZE));
 
-    group.bench_with_input(BenchmarkId::new("CUDA", size), &size, |b, &size| {
+    group.bench_with_input(BenchmarkId::new("CUDA", SIZE), &SIZE, |b, &size| {
         let t1 = Tensor::rand(&[size, size]).to::<Cuda>().unwrap();
         let t2 = Tensor::rand(&[size, size]).to::<Cuda>().unwrap();
 
