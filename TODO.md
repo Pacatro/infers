@@ -15,7 +15,8 @@ Inspirations:
   - [x] Relu
   - [x] Flatten
   - [x] Gemm
-- [ ] Load ONNX model
+- [x] Compile ONNX protobufs
+  - [x] Load ONNX model
 - [ ] Construct computational graph
 - [ ] Run inference with user inputs
 - [ ] Display results

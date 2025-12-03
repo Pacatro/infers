@@ -1,30 +1,27 @@
-use std::time::Instant;
+use prost::Message;
+use std::{fs::File, io::Read};
 
-use infers::InfersResult;
-use infers::Tensor;
+use infers::{InfersResult, onnx::ModelProto};
 
-fn test_time() -> InfersResult<()> {
-    let t1 = Tensor::rand(&[1000, 1000]);
-    let t2 = Tensor::rand(&[1000, 1000]);
+fn main() -> InfersResult<()> {
+    let mut file = File::open("onnx_models/mnist_fc_model.onnx")?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
 
-    let start = Instant::now();
-    let _ = t1.matmul(&t2);
-    println!("Matmul (CPU) duration: {:?}", start.elapsed());
+    // Decodificar el buffer protobuf
+    let model = ModelProto::decode(&*buffer)?;
 
-    #[cfg(feature = "cuda")]
-    {
-        use infers::backends::Cuda;
-        let t1 = t1.to::<Cuda>()?;
-        let t2 = t2.to::<Cuda>()?;
-        let start = Instant::now();
-        let _ = t1.matmul(&t2);
-        println!("Matmul (CUDA) duration: {:?}", start.elapsed());
-        // println!("{t3}");
+    // Por ejemplo: obtener el grafo, número de nodos, tensores inicializadores (pesos)
+    if let Some(graph) = model.graph.as_ref() {
+        println!("Graph name: {:?}", graph.name);
+        println!("Number of nodes: {}", graph.node.len());
+        println!(
+            "Number of initializers (weights): {}",
+            graph.initializer.len()
+        );
+    } else {
+        println!("No graph in the model");
     }
 
     Ok(())
-}
-
-fn main() -> InfersResult<()> {
-    test_time()
 }
