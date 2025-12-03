@@ -1,14 +1,17 @@
 import torch
+import time
 
-m = 2
-k = 3
-n = 4
+t1 = torch.rand(1000, 1000)
+t2 = torch.rand(1000, 1000)
 
-t1 = torch.tensor([[1, 2, 3], [4, 5, 6]])
-t2 = torch.tensor([[5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]])
+print("Starting")
+start = time.time()
+t1.matmul(t2)
+print("Matmul time (CPU): ", time.time() - start)
 
-print(t1.shape)
-print(t2.shape)
-t3 = t1 @ t2
-print(t3.shape)
-print(t3)
+t1 = t1.to("cuda")
+t2 = t2.to("cuda")
+
+start = time.time()
+t1.matmul(t2)
+print("Matmul time (GPU): ", time.time() - start)
