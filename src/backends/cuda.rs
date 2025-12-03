@@ -203,6 +203,8 @@ impl Backend<f32> for Cuda {
                 .unwrap();
         }
 
+        stream.synchronize().unwrap();
+
         c
     }
 }
