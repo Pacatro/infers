@@ -367,7 +367,7 @@ where
     /// # Returns
     ///
     /// A new `Tensor` containing the result of the matrix multiplication.
-    pub fn matmul(&self, rhs: Self) -> Self {
+    pub fn matmul(&self, rhs: &Self) -> Self {
         let m = self.shape[0];
         let k = self.shape[1];
         let n = rhs.shape[1];
@@ -590,7 +590,7 @@ mod tests {
     fn test_tensor_matmul_same_shapes_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = t1.matmul(t2);
+        let t3 = t1.matmul(&t2);
 
         assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
         assert_eq!(t3.device(), Device::Cpu);
@@ -604,7 +604,7 @@ mod tests {
             &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
             &[3, 4],
         );
-        let t3 = t1.matmul(t2);
+        let t3 = t1.matmul(&t2);
 
         assert_eq!(
             t3.data().unwrap(),
@@ -619,7 +619,7 @@ mod tests {
     fn test_tensor_matmul_bad_shapes_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6.], &[1, 2]);
-        let _ = t1.matmul(t2);
+        let _ = t1.matmul(&t2);
     }
 
     #[test]
@@ -685,7 +685,7 @@ mod tests {
     fn test_tensor_matmul_same_shapes_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = t1.matmul(t2);
+        let t3 = t1.matmul(&t2);
 
         assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
         assert_eq!(t3.device(), Device::Cuda);
@@ -701,7 +701,7 @@ mod tests {
             &[3, 4],
         )
         .unwrap();
-        let t3 = t1.matmul(t2);
+        let t3 = t1.matmul(&t2);
 
         assert_eq!(
             t3.data().unwrap(),
@@ -717,6 +717,6 @@ mod tests {
     fn test_tensor_matmul_bad_shapes_cuda() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6.], &[1, 2]);
-        let _ = t1.matmul(t2);
+        let _ = t1.matmul(&t2);
     }
 }

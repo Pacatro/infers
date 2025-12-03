@@ -7,20 +7,20 @@ use tensor::Tensor;
 pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn test_time() -> InfersResult<()> {
-    let t1 = Tensor::rand(&[3000, 3000]);
-    let t2 = Tensor::rand(&[3000, 3000]);
+    let t1 = Tensor::rand(&[1000, 1000]);
+    let t2 = Tensor::rand(&[1000, 1000]);
 
     let start = Instant::now();
-    let _ = t1.matmul(t2);
+    let _ = t1.matmul(&t2);
     println!("Matmul (CPU) duration: {:?}", start.elapsed());
 
     #[cfg(feature = "cuda")]
     {
         use crate::backends::Cuda;
-        let t1 = Tensor::rand(&[3000, 3000]).to::<Cuda>()?;
-        let t2 = Tensor::rand(&[3000, 3000]).to::<Cuda>()?;
+        let t1 = t1.to::<Cuda>()?;
+        let t2 = t2.to::<Cuda>()?;
         let start = Instant::now();
-        let _ = t1.matmul(t2);
+        let _ = t1.matmul(&t2);
         println!("Matmul (CUDA) duration: {:?}", start.elapsed());
         // println!("{t3}");
     }
