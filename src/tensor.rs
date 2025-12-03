@@ -303,6 +303,7 @@ where
         self.len
     }
 
+    /// Returns `true` if the tensor is empty (i.e., has zero length).
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
