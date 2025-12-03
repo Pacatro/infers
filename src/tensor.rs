@@ -342,6 +342,10 @@ where
             _backend: PhantomData,
         }
     }
+
+    pub fn matmul(&self, rhs: Self) -> Self {
+        B::gemm(self, &rhs, T::one(), T::zero())
+    }
 }
 
 impl<B, T> ops::Add for Tensor<B, T>
@@ -536,6 +540,42 @@ mod tests {
         assert_eq!(t.strides, &[1]);
         assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
         assert_eq!(t.device(), Device::Cpu);
+    }
+
+    #[test]
+    fn test_tensor_matmul_same_shapes_cpu() {
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
+        let t3 = t1.matmul(t2);
+
+        assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
+        assert_eq!(t3.device(), Device::Cpu);
+        assert_eq!(t3.shape, &[2, 2]);
+    }
+
+    #[test]
+    fn test_tensor_matmul_diff_shapes_cpu() {
+        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
+        let t2 = Tensor::new(
+            &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
+            &[3, 4],
+        );
+        let t3 = t1.matmul(t2);
+
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![62., 68., 74., 80., 143., 158., 173., 188.]
+        );
+        assert_eq!(t3.device(), Device::Cpu);
+        assert_eq!(t3.shape, &[2, 4]);
+    }
+
+    #[test]
+    #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
+    fn test_tensor_matmul_bad_shapes_cpu() {
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t2 = Tensor::new(&[5., 6.], &[1, 2]);
+        let _ = t1.matmul(t2);
     }
 
     #[test]

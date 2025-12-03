@@ -8,6 +8,7 @@ use std::{fmt::Debug, sync::Arc};
 use crate::{
     InfersResult,
     backends::{Backend, Device},
+    tensor::Tensor,
 };
 
 /// Compiles a CUDA kernel from a string source.
@@ -156,5 +157,14 @@ impl Backend<f32> for Cuda {
             context: ctx,
             buffer: out_device,
         }
+    }
+
+    fn gemm(
+        lhs: &Tensor<Self, f32>,
+        rhs: &Tensor<Self, f32>,
+        alpha: f32,
+        beta: f32,
+    ) -> Tensor<Self, f32> {
+        todo!()
     }
 }

@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::InfersResult;
+use crate::{InfersResult, tensor::Tensor};
 
 /// Represents the physical device where the computation and storage will occur.
 ///
@@ -140,4 +140,6 @@ pub(crate) trait Backend<T>: Clone + Debug + Copy {
     fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
 
     fn relu(input: &Self::Storage, size: usize) -> Self::Storage;
+
+    fn gemm(lhs: &Tensor<Self, T>, rhs: &Tensor<Self, T>, alpha: T, beta: T) -> Tensor<Self, T>;
 }
