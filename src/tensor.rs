@@ -308,6 +308,10 @@ where
         self.len == 0
     }
 
+    pub fn ndims(&self) -> usize {
+        self.shape.len()
+    }
+
     /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).
     ///
     /// This involves copying the data from the current device to the host (CPU),
@@ -370,6 +374,8 @@ where
     ///
     /// A new `Tensor` containing the result of the matrix multiplication.
     pub fn matmul(&self, rhs: &Self) -> Self {
+        // TODO: Use batching to handle higher-dimensional tensors
+
         let m = self.shape[0];
         let k = self.shape[1];
         let n = rhs.shape[1];
@@ -531,12 +537,28 @@ mod tests {
 
     #[test]
     fn test_tensor_rand() {
-        let t = Tensor::<Cpu, f32>::rand(&[2, 2]);
+        let t = Tensor::rand(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
         assert_eq!(t.len, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.len, 4);
         assert_eq!(t.device(), Device::Cpu);
+    }
+
+    #[test]
+    fn test_tensor_randn() {
+        let t = Tensor::randn(&[2, 2]);
+        assert_eq!(t.shape, &[2, 2]);
+        assert_eq!(t.len, 4);
+        assert_eq!(t.strides, &[2, 1]);
+        assert_eq!(t.len, 4);
+        assert_eq!(t.device(), Device::Cpu);
+    }
+
+    #[test]
+    fn test_tensor_ndim() {
+        let t = Tensor::rand(&[2, 2, 2]);
+        assert_eq!(t.ndims(), 3);
     }
 
     #[test]
@@ -622,6 +644,22 @@ mod tests {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6.], &[1, 2]);
         let _ = t1.matmul(&t2);
+    }
+
+    #[test]
+    #[ignore = "Not implemented"]
+    fn test_tensor_matmul_ndims_cpu() {
+        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
+        let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
+
+        let t3 = t1.matmul(&t2);
+
+        assert_eq!(t3.shape, &[2, 2, 2]);
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![19., 22., 43., 50., 111., 122., 151., 166.]
+        );
+        assert_eq!(t3.device(), Device::Cpu);
     }
 
     #[test]
@@ -717,8 +755,24 @@ mod tests {
     #[cfg(feature = "cuda")]
     #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
     fn test_tensor_matmul_bad_shapes_cuda() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t2 = Tensor::new(&[5., 6.], &[1, 2]);
+        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6.], &[1, 2]).unwrap();
         let _ = t1.matmul(&t2);
+    }
+
+    #[test]
+    #[ignore = "Not implemented"]
+    fn test_tensor_matmul_ndims_cuda() {
+        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
+        let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
+
+        let t3 = t1.matmul(&t2);
+
+        assert_eq!(t3.shape, &[2, 2, 2]);
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![19., 22., 43., 50., 111., 122., 151., 166.]
+        );
+        assert_eq!(t3.device(), Device::Cpu);
     }
 }
