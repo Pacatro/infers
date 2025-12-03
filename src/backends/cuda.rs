@@ -29,7 +29,7 @@ fn compile_kernel(
 ///
 /// * `T`: The element type, which must be representable on a CUDA device.
 #[derive(Debug, Clone)]
-pub(crate) struct CudaStorage {
+pub struct CudaStorage {
     /// The CUDA context, shared via `Arc` to manage device resources.
     context: Arc<CudaContext>,
     /// The actual memory buffer stored on the CUDA device.
@@ -41,7 +41,7 @@ pub(crate) struct CudaStorage {
 /// This struct implements the `Backend` trait, providing all the necessary
 /// methods for managing data and performing operations on an NVIDIA GPU.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Cuda;
+pub struct Cuda;
 
 impl Backend<f32> for Cuda {
     type Storage = CudaStorage;

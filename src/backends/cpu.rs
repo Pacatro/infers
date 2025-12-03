@@ -12,7 +12,7 @@ use crate::{
 /// This struct implements the `Backend` trait, providing all the necessary
 /// methods for managing data and performing operations on the CPU.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Cpu;
+pub struct Cpu;
 
 impl<T> Backend<T> for Cpu
 where

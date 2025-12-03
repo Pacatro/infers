@@ -43,7 +43,7 @@ fn compute_strides(shape: &[usize]) -> Vec<usize> {
 /// * `B`: The backend implementation (e.g., `Cpu`, `Cuda`). Defaults to `Cpu`.
 /// * `T`: The element data type (e.g., `f32`, `i32`). Defaults to `f32`.
 #[derive(Debug, Clone)]
-pub(crate) struct Tensor<B = Cpu, T = f32>
+pub struct Tensor<B = Cpu, T = f32>
 where
     B: Backend<T>,
 {
@@ -59,7 +59,6 @@ where
     _backend: PhantomData<B>,
 }
 
-#[allow(dead_code)]
 impl Tensor {
     /// Creates a new CPU tensor initialized with random numbers uniformly distributed
     /// between 0.0 and 1.0.
@@ -121,7 +120,6 @@ impl Tensor {
     }
 }
 
-#[allow(dead_code)]
 impl<T> Tensor<Cpu, T>
 where
     Cpu: Backend<T, Storage = Vec<T>>,
@@ -202,7 +200,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
@@ -304,6 +301,10 @@ where
     /// Returns the total number of elements in the tensor (the product of all dimensions).
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).

@@ -36,7 +36,7 @@ impl Display for Device {
 /// The generic parameter `T` represents the element type stored by the backend
 /// (e.g., f32, i32).
 #[allow(dead_code)]
-pub(crate) trait Backend<T>: Clone + Debug + Copy {
+pub trait Backend<T>: Clone + Debug + Copy {
     /// The device-specific memory storage type.
     ///
     /// This might be a `Vec<T>` for the CPU backend, or a GPU buffer type

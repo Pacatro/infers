@@ -3,7 +3,7 @@ mod cpu;
 #[cfg(feature = "cuda")]
 mod cuda;
 
-pub(crate) use backend::{Backend, Device};
-pub(crate) use cpu::Cpu;
+pub use backend::{Backend, Device};
+pub use cpu::Cpu;
 #[cfg(feature = "cuda")]
-pub(crate) use cuda::Cuda;
+pub use cuda::Cuda;

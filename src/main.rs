@@ -1,10 +1,7 @@
-mod backends;
-mod tensor;
-
 use std::time::Instant;
-use tensor::Tensor;
 
-pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+use infers::InfersResult;
+use infers::Tensor;
 
 fn test_time() -> InfersResult<()> {
     let t1 = Tensor::rand(&[1000, 1000]);
@@ -16,7 +13,7 @@ fn test_time() -> InfersResult<()> {
 
     #[cfg(feature = "cuda")]
     {
-        use crate::backends::Cuda;
+        use infers::backends::Cuda;
         let t1 = t1.to::<Cuda>()?;
         let t2 = t2.to::<Cuda>()?;
         let start = Instant::now();
@@ -27,6 +24,7 @@ fn test_time() -> InfersResult<()> {
 
     Ok(())
 }
+
 fn main() -> InfersResult<()> {
     test_time()
 }
