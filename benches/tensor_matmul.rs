@@ -1,51 +1,61 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use infers::Tensor;
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-const SIZE: usize = 200;
+use infers::Tensor;
 
-fn bench_matmul_cpu(c: &mut Criterion) {
-    let mut group = c.benchmark_group(format!("matmul {}x{}", SIZE, SIZE));
+const BENCH_GROUP: &str = "Matrix Multiplication (N x N)";
+const SIZES: &[usize] = &[64, 128, 256, 512, 1024, 2048];
+const SAMPLE_SIZE: usize = 10;
 
-    group.bench_with_input(BenchmarkId::new("CPU", SIZE), &SIZE, |b, &size| {
-        let t1 = Tensor::rand(&[size, size]);
-        let t2 = Tensor::rand(&[size, size]);
+fn bench_cpu_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group(BENCH_GROUP);
 
-        b.iter(|| {
-            let result = black_box(&t1).matmul(black_box(&t2));
-            black_box(result);
+    for &n in SIZES {
+        let bench_id = format!("CPU_{}x{}", n, n);
+
+        let t1 = Tensor::rand(&[n, n]);
+        let t2 = Tensor::rand(&[n, n]);
+
+        group.bench_function(&bench_id, |b| {
+            b.iter(|| {
+                let r = t1.matmul(&t2);
+                black_box(r);
+            });
         });
-    });
-
+    }
     group.finish();
 }
 
 #[cfg(feature = "cuda")]
-fn bench_matmul_cuda(c: &mut Criterion) {
+fn bench_cuda_sizes(c: &mut Criterion) {
     use infers::backends::Cuda;
+    let mut group = c.benchmark_group(BENCH_GROUP);
 
-    let mut group = c.benchmark_group(format!("matmul {}x{}", SIZE, SIZE));
+    for &n in SIZES {
+        let bench_id = format!("CUDA_{}x{}", n, n);
 
-    group.bench_with_input(BenchmarkId::new("CUDA", SIZE), &SIZE, |b, &size| {
-        let t1 = Tensor::rand(&[size, size]).to::<Cuda>().unwrap();
-        let t2 = Tensor::rand(&[size, size]).to::<Cuda>().unwrap();
+        let t1 = Tensor::rand(&[n, n]).to::<Cuda>().unwrap();
+        let t2 = Tensor::rand(&[n, n]).to::<Cuda>().unwrap();
 
-        b.iter(|| {
-            let result = black_box(&t1).matmul(black_box(&t2));
-            black_box(result);
+        group.bench_function(&bench_id, |b| {
+            b.iter(|| {
+                let r = t1.matmul(&t2);
+                black_box(r);
+            });
         });
-    });
-
+    }
     group.finish();
 }
 
-criterion_group!(benches_cpu, bench_matmul_cpu);
+fn bench_all(c: &mut Criterion) {
+    bench_cpu_sizes(c);
+    #[cfg(feature = "cuda")]
+    bench_cuda_sizes(c);
+}
 
-#[cfg(feature = "cuda")]
-criterion_group!(benches_cuda, bench_matmul_cuda);
-
-#[cfg(feature = "cuda")]
-criterion_main!(benches_cpu, benches_cuda);
-
-#[cfg(not(feature = "cuda"))]
-criterion_main!(benches_cpu);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().sample_size(SAMPLE_SIZE);
+    targets = bench_all
+}
+criterion_main!(benches);
