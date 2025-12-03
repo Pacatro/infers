@@ -77,20 +77,75 @@ where
         k: usize,
     ) -> Self::Storage {
         // See this for optimization: https://salykova.github.io/gemm-cpu
+        // Also this implementation looks interesting: https://github.com/Krish120003/gemm-rust/
         let mut c = vec![T::zero(); m * n];
 
         for i in 0..m {
             for j in 0..n {
                 let mut sum = T::zero();
-
                 for p in 0..k {
                     sum += lhs[i * k + p] * rhs[p * n + j];
                 }
-
                 c[i * n + j] = alpha * sum + beta * c[i * n + j];
             }
         }
 
         c
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backend_read_cpu() {
+        let storage = vec![1., 2., 3., 4.];
+        assert_eq!(Cpu::read(&storage, 0), 1.);
+    }
+
+    #[test]
+    fn test_backend_write_cpu() {
+        let mut storage = vec![1., 2., 3., 4.];
+        Cpu::write(&mut storage, 0, 10.);
+        assert_eq!(storage, vec![10., 2., 3., 4.]);
+    }
+
+    #[test]
+    fn test_backend_copy_to_host_cpu() {
+        let storage = vec![1., 2., 3., 4.];
+        let host_data = Cpu::copy_to_host(&storage).unwrap();
+        assert_eq!(host_data, vec![1., 2., 3., 4.]);
+    }
+
+    #[test]
+    fn test_backend_add_cpu() {
+        let lhs = vec![1., 2., 3., 4.];
+        let rhs = vec![5., 6., 7., 8.];
+        let result = Cpu::add(&lhs, &rhs, 4);
+        assert_eq!(result, vec![6., 8., 10., 12.]);
+    }
+
+    #[test]
+    fn test_backend_sub_cpu() {
+        let lhs = vec![5., 6., 7., 8.];
+        let rhs = vec![1., 2., 3., 4.];
+        let result = Cpu::sub(&lhs, &rhs, 4);
+        assert_eq!(result, vec![4., 4., 4., 4.]);
+    }
+
+    #[test]
+    fn test_backend_relu_cpu() {
+        let input = vec![-1., -2., 3., 4.];
+        let result = Cpu::relu(&input, 4);
+        assert_eq!(result, vec![0., 0., 3., 4.]);
+    }
+
+    #[test]
+    fn test_backend_gemm_cpu() {
+        let lhs = vec![1., 2., 3., 4.];
+        let rhs = vec![5., 6., 7., 8.];
+        let result = Cpu::gemm(&lhs, &rhs, 1., 0., 2, 2, 2);
+        assert_eq!(result, vec![19., 22., 43., 50.]);
     }
 }

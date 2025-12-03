@@ -206,3 +206,68 @@ impl Backend<f32> for Cuda {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "cuda")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backend_init_and_copy_roundtrip_cuda() {
+        let host = vec![1.0f32, 2.0, 3.0, 4.0];
+        let storage = Cuda::init(&host).unwrap();
+        let back = Cuda::copy_to_host(&storage).unwrap();
+        assert_eq!(back, host);
+    }
+
+    #[test]
+    fn test_backend_add_cuda() {
+        let lhs = vec![1.0f32, 2.0, 3.0, 4.0];
+        let rhs = vec![5.0f32, 6.0, 7.0, 8.0];
+        let size = lhs.len();
+        let s_lhs = Cuda::init(&lhs).unwrap();
+        let s_rhs = Cuda::init(&rhs).unwrap();
+        let s_out = Cuda::add(&s_lhs, &s_rhs, size);
+        let result = Cuda::copy_to_host(&s_out).unwrap();
+        assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
+    }
+
+    #[test]
+    fn test_backend_sub_cuda() {
+        let lhs = vec![5.0f32, 6.0, 7.0, 8.0];
+        let rhs = vec![1.0f32, 2.0, 3.0, 4.0];
+        let size = lhs.len();
+        let s_lhs = Cuda::init(&lhs).unwrap();
+        let s_rhs = Cuda::init(&rhs).unwrap();
+        let s_out = Cuda::sub(&s_lhs, &s_rhs, size);
+        let result = Cuda::copy_to_host(&s_out).unwrap();
+        assert_eq!(result, vec![4.0, 4.0, 4.0, 4.0]);
+    }
+
+    #[test]
+    fn test_backend_relu_cuda() {
+        let input = vec![-1.0f32, -2.0, 3.0, 4.0];
+        let s_input = Cuda::init(&input).unwrap();
+        let s_out = Cuda::relu(&s_input, input.len());
+        let result = Cuda::copy_to_host(&s_out).unwrap();
+        assert_eq!(result, vec![0.0, 0.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_backend_gemm_cuda_2x2() {
+        // A = [1 2; 3 4], B = [5 6; 7 8]
+        let lhs = vec![1.0f32, 2.0, 3.0, 4.0];
+        let rhs = vec![5.0f32, 6.0, 7.0, 8.0];
+        let m = 2;
+        let k = 2;
+        let n = 2;
+
+        let s_lhs = Cuda::init(&lhs).unwrap();
+        let s_rhs = Cuda::init(&rhs).unwrap();
+
+        let s_out = Cuda::gemm(&s_lhs, &s_rhs, 1.0, 0.0, m, n, k);
+
+        let result = Cuda::copy_to_host(&s_out).unwrap();
+        assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
+    }
+}
