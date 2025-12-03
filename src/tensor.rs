@@ -368,7 +368,27 @@ where
     ///
     /// A new `Tensor` containing the result of the matrix multiplication.
     pub fn matmul(&self, rhs: Self) -> Self {
-        B::gemm(self, &rhs, T::one(), T::zero())
+        let m = self.shape[0];
+        let k = self.shape[1];
+        let n = rhs.shape[1];
+
+        assert_eq!(
+            k, rhs.shape[0],
+            "mat1 and mat2 shapes cannot be multiplied ({}x{} and {}x{})",
+            m, k, k, n
+        );
+
+        let new_storage = B::gemm(&self.storage, &rhs.storage, T::one(), T::zero(), m, n, k);
+        let shape = vec![m, n];
+        let strides = compute_strides(&shape);
+
+        Self {
+            storage: new_storage,
+            shape,
+            strides,
+            len: m * n,
+            _backend: PhantomData,
+        }
     }
 }
 

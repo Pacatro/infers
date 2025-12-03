@@ -7,8 +7,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     InfersResult,
-    backends::{Backend, Cpu, Device},
-    tensor::Tensor,
+    backends::{Backend, Device},
 };
 
 /// Compiles a CUDA kernel from a string source.
@@ -160,27 +159,23 @@ impl Backend<f32> for Cuda {
     }
 
     fn gemm(
-        lhs: &Tensor<Self, f32>,
-        rhs: &Tensor<Self, f32>,
+        lhs: &Self::Storage,
+        rhs: &Self::Storage,
         alpha: f32,
         beta: f32,
-    ) -> Tensor<Self, f32> {
-        let ctx = lhs.storage.context.clone();
+        m: usize,
+        n: usize,
+        k: usize,
+    ) -> Self::Storage {
+        let ctx = lhs.context.clone();
         let stream = ctx.default_stream();
 
         let func = compile_kernel(include_str!("../../kernels/gemm.cu"), "gemm", &ctx).unwrap();
 
-        let m = lhs.shape[0] as i32;
-        let k = lhs.shape[1] as i32;
-        assert_eq!(rhs.shape[0] as i32, k);
-        let n = rhs.shape[1] as i32;
-
-        let mut c = Tensor::<Cpu, f32>::zeros(&[m as usize, n as usize])
-            .to::<Self>()
-            .unwrap();
+        let mut c = stream.alloc_zeros::<f32>(m * n).unwrap();
 
         let block = (16, 16, 1);
-        let grid = ((n + block.0 - 1) / block.0, (m + block.1 - 1) / block.1, 1);
+        let grid = (n.div_ceil(block.0), m.div_ceil(block.1), 1);
 
         let config = LaunchConfig {
             grid_dim: (grid.0 as u32, grid.1 as u32, 1),
@@ -195,16 +190,19 @@ impl Backend<f32> for Cuda {
                 .arg(&n)
                 .arg(&k)
                 .arg(&alpha)
-                .arg(&lhs.storage.buffer)
-                .arg(&rhs.storage.buffer)
+                .arg(&lhs.buffer)
+                .arg(&rhs.buffer)
                 .arg(&beta)
-                .arg(&mut c.storage.buffer)
+                .arg(&mut c)
                 .launch(config)
                 .unwrap();
         }
 
         stream.synchronize().unwrap();
 
-        c
+        CudaStorage {
+            context: ctx,
+            buffer: c,
+        }
     }
 }
