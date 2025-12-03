@@ -87,7 +87,7 @@ impl Backend<f32> for Cuda {
         let ctx = lhs.context.clone();
         let stream = ctx.default_stream();
 
-        let func = compile_kernel(include_str!("../../kernels/add.cu"), "add", &ctx).unwrap();
+        let func = compile_kernel(include_str!("./kernels/add.cu"), "add", &ctx).unwrap();
 
         let config = LaunchConfig::for_num_elems(size as u32);
         let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
@@ -112,7 +112,7 @@ impl Backend<f32> for Cuda {
         let ctx = lhs.context.clone();
         let stream = ctx.default_stream();
 
-        let func = compile_kernel(include_str!("../../kernels/sub.cu"), "sub", &ctx).unwrap();
+        let func = compile_kernel(include_str!("./kernels/sub.cu"), "sub", &ctx).unwrap();
 
         let config = LaunchConfig::for_num_elems(size as u32);
         let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
@@ -137,7 +137,7 @@ impl Backend<f32> for Cuda {
         let ctx = input.context.clone();
         let stream = ctx.default_stream();
 
-        let func = compile_kernel(include_str!("../../kernels/relu.cu"), "relu", &ctx).unwrap();
+        let func = compile_kernel(include_str!("./kernels/relu.cu"), "relu", &ctx).unwrap();
 
         let config = LaunchConfig::for_num_elems(size as u32);
         let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
@@ -170,7 +170,7 @@ impl Backend<f32> for Cuda {
         let ctx = lhs.context.clone();
         let stream = ctx.default_stream();
 
-        let func = compile_kernel(include_str!("../../kernels/gemm.cu"), "gemm", &ctx).unwrap();
+        let func = compile_kernel(include_str!("./kernels/gemm.cu"), "gemm", &ctx).unwrap();
 
         let mut c = stream.alloc_zeros::<f32>(m * n).unwrap();
 
