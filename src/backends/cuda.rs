@@ -7,7 +7,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     InfersResult,
-    backends::{Backend, Device},
+    backends::{Backend, Cpu, Device},
     tensor::Tensor,
 };
 
@@ -165,6 +165,44 @@ impl Backend<f32> for Cuda {
         alpha: f32,
         beta: f32,
     ) -> Tensor<Self, f32> {
-        todo!()
+        let ctx = lhs.storage.context.clone();
+        let stream = ctx.default_stream();
+
+        let func = compile_kernel(include_str!("../../kernels/gemm.cu"), "gemm", &ctx).unwrap();
+
+        let m = lhs.shape[0] as i32;
+        let k = lhs.shape[1] as i32;
+        assert_eq!(rhs.shape[0] as i32, k);
+        let n = rhs.shape[1] as i32;
+
+        let mut c = Tensor::<Cpu, f32>::zeros(&[m as usize, n as usize])
+            .to::<Self>()
+            .unwrap();
+
+        let block = (16, 16, 1);
+        let grid = ((n + block.0 - 1) / block.0, (m + block.1 - 1) / block.1, 1);
+
+        let config = LaunchConfig {
+            grid_dim: (grid.0 as u32, grid.1 as u32, 1),
+            block_dim: (block.0 as u32, block.1 as u32, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&m)
+                .arg(&n)
+                .arg(&k)
+                .arg(&alpha)
+                .arg(&lhs.storage.buffer)
+                .arg(&rhs.storage.buffer)
+                .arg(&beta)
+                .arg(&mut c.storage.buffer)
+                .launch(config)
+                .unwrap();
+        }
+
+        c
     }
 }

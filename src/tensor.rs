@@ -34,7 +34,7 @@ fn compute_strides(shape: &[usize]) -> Vec<usize> {
 /// array (Tensor).
 ///
 /// Tensors are device-agnostic, relying on the generic `Backend` trait to handle
-/// storage and computation on different devices (CPU, GPU).
+/// storage and computation on different devices (CPU, cuda).
 ///
 ///
 ///
@@ -52,9 +52,9 @@ where
     /// The number of elements to skip in the linear storage to advance one unit along each dimension.
     pub strides: Vec<usize>,
     /// The total number of elements in the tensor.
-    size: usize,
+    len: usize,
     /// The underlying device-specific storage for the tensor data.
-    storage: B::Storage,
+    pub storage: B::Storage,
     /// Marker to hold the backend type without storing data.
     _backend: PhantomData<B>,
 }
@@ -72,10 +72,10 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with random values.
     pub fn rand(shape: &[usize]) -> Self {
-        let size = shape.iter().product();
+        let len = shape.iter().product();
         let strides = compute_strides(shape);
 
-        let data = (0..size)
+        let data = (0..len)
             .into_par_iter()
             .map(|_| rand::random::<f32>())
             .collect::<Vec<f32>>();
@@ -83,7 +83,7 @@ impl Tensor {
         Self {
             storage: data,
             shape: shape.to_vec(),
-            size,
+            len,
             strides,
             _backend: PhantomData,
         }
@@ -100,10 +100,10 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with normally distributed random values.
     pub fn randn(shape: &[usize]) -> Self {
-        let size: usize = shape.iter().product();
+        let len: usize = shape.iter().product();
         let strides = compute_strides(shape);
 
-        let data = (0..size)
+        let data = (0..len)
             .into_par_iter()
             .map(|_| {
                 let mut rng = rand::rng();
@@ -114,7 +114,7 @@ impl Tensor {
         Tensor {
             storage: data,
             shape: shape.to_vec(),
-            size,
+            len,
             strides,
             _backend: PhantomData,
         }
@@ -138,16 +138,21 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the length of `data` does not match the total size implied by `shape`.
+    /// Panics if the length of `data` does not match the total len implied by `shape`.
     pub fn new(data: &[T], shape: &[usize]) -> Self {
-        let size = shape.iter().product();
-        assert_eq!(data.len(), size, "Data size mismatch for shape {:?}", shape);
+        let len = shape.iter().product();
+        assert_eq!(
+            data.len(),
+            len,
+            "Data length mismatch for shape {:?}",
+            shape
+        );
 
         Self {
             storage: data.to_vec(),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            size,
+            len,
             _backend: PhantomData,
         }
     }
@@ -162,12 +167,12 @@ where
     ///
     /// A tensor of the specified shape filled with the zero element of type `T`.
     pub fn zeros(shape: &[usize]) -> Self {
-        let size = shape.iter().product();
+        let len = shape.iter().product();
         Self {
-            storage: vec![T::zero(); size],
+            storage: vec![T::zero(); len],
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            size,
+            len,
             _backend: PhantomData,
         }
     }
@@ -182,15 +187,15 @@ where
     ///
     /// A tensor of the specified shape filled with the one element of type `T`.
     pub fn ones(shape: &[usize]) -> Self {
-        let size = shape.iter().product();
+        let len = shape.iter().product();
 
         let strides = compute_strides(shape);
-        let storage = vec![T::one(); size];
+        let storage = vec![T::one(); len];
 
         Self {
             storage,
             shape: shape.to_vec(),
-            size,
+            len,
             strides,
             _backend: PhantomData,
         }
@@ -206,7 +211,7 @@ where
     /// Creates a tensor on the specified backend from host data.
     ///
     /// This method uses the backend's `init` function to move data from the host
-    /// buffer to the device storage (e.g., copying to GPU memory for the CUDA backend).
+    /// buffer to the device storage (e.g., copying to cuda memory for the CUDA backend).
     ///
     /// # Arguments
     ///
@@ -217,13 +222,13 @@ where
     ///
     /// A `Result` containing the initialized `Tensor` or an error if backend initialization fails.
     pub fn from_data(data: &[T], shape: &[usize]) -> InfersResult<Self> {
-        let size = shape.iter().product();
-        assert_eq!(data.len(), size, "Data size mismatch");
+        let len = shape.iter().product();
+        assert_eq!(data.len(), len, "Data length mismatch");
         Ok(Self {
             storage: B::init(data)?,
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            size,
+            len,
             _backend: PhantomData,
         })
     }
@@ -264,7 +269,7 @@ where
 
     /// Retrieves a single element from the tensor using multi-dimensional indices.
     ///
-    /// This uses the backend's `read` method, which can be inefficient for GPU backends.
+    /// This uses the backend's `read` method, which can be inefficient for cuda backends.
     ///
     /// # Arguments
     ///
@@ -280,7 +285,7 @@ where
 
     /// Sets a single element in the tensor using multi-dimensional indices.
     ///
-    /// This uses the backend's `write` method, which can be inefficient for GPU backends.
+    /// This uses the backend's `write` method, which can be inefficient for cuda backends.
     ///
     /// # Arguments
     ///
@@ -298,7 +303,7 @@ where
 
     /// Returns the total number of elements in the tensor (the product of all dimensions).
     pub fn len(&self) -> usize {
-        self.size
+        self.len
     }
 
     /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).
@@ -323,26 +328,45 @@ where
         Tensor::from_data(&host_data, &self.shape)
     }
 
+    /// Applies the ReLU activation function to the tensor.
+    ///
+    /// # Returns
+    ///
+    /// A new `Tensor` with the ReLU activation applied.
     pub fn relu(&self) -> Self {
         Self {
-            storage: B::relu(&self.storage, self.size),
+            storage: B::relu(&self.storage, self.len),
             shape: self.shape.clone(),
             strides: self.strides.clone(),
-            size: self.size,
+            len: self.len,
             _backend: PhantomData,
         }
     }
 
+    /// Flattens the tensor into a 1D array.
+    ///
+    /// # Returns
+    ///
+    /// A new `Tensor` with the flattened data.
     pub fn flatten(&self) -> Self {
         Self {
             storage: self.storage.clone(),
-            shape: vec![self.size],
+            shape: vec![self.len],
             strides: vec![1],
-            size: self.size,
+            len: self.len,
             _backend: PhantomData,
         }
     }
 
+    /// Performs matrix multiplication between two tensors.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs`: The right-hand side tensor.
+    ///
+    /// # Returns
+    ///
+    /// A new `Tensor` containing the result of the matrix multiplication.
     pub fn matmul(&self, rhs: Self) -> Self {
         B::gemm(self, &rhs, T::one(), T::zero())
     }
@@ -372,13 +396,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::add(&self.storage, &rhs.storage, self.size);
+        let new_storage = B::add(&self.storage, &rhs.storage, self.len);
 
         Self::Output {
             storage: new_storage,
-            shape: self.shape.clone(),
-            strides: self.strides.clone(),
-            size: self.size,
+            shape: self.shape,
+            strides: self.strides,
+            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -400,13 +424,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::sub(&self.storage, &rhs.storage, self.size);
+        let new_storage = B::sub(&self.storage, &rhs.storage, self.len);
 
         Self::Output {
             storage: new_storage,
-            shape: self.shape.clone(),
-            strides: self.strides.clone(),
-            size: self.size,
+            shape: self.shape,
+            strides: self.strides,
+            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -420,7 +444,7 @@ where
     T: Num + Debug + Clone + Copy + FromPrimitive,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.len() > MAX_TENSOR_DISPLAY {
+        if self.len > MAX_TENSOR_DISPLAY {
             return write!(
                 f,
                 "Tensor(data=[...], shape={:?}, device={}, dtype={})",
@@ -459,7 +483,7 @@ mod tests {
     fn test_tensor_new() {
         let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size, 4);
+        assert_eq!(t.len, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 2, 3, 4]);
         assert_eq!(t.device(), Device::Cpu);
@@ -469,7 +493,7 @@ mod tests {
     fn test_tensor_zeros() {
         let t = Tensor::<Cpu, i32>::zeros(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size, 4);
+        assert_eq!(t.len, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![0, 0, 0, 0]);
     }
@@ -478,7 +502,7 @@ mod tests {
     fn test_tensor_ones() {
         let t = Tensor::<Cpu, i32>::ones(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size, 4);
+        assert_eq!(t.len, 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 1, 1, 1]);
     }
@@ -487,9 +511,9 @@ mod tests {
     fn test_tensor_rand() {
         let t = Tensor::<Cpu, f32>::rand(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size, 4);
+        assert_eq!(t.len, 4);
         assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.len(), 4);
+        assert_eq!(t.len, 4);
         assert_eq!(t.device(), Device::Cpu);
     }
 
@@ -582,12 +606,12 @@ mod tests {
     #[cfg(feature = "cuda")]
     fn test_tensor_to_cuda() {
         let t_cpu = Tensor::rand(&[2, 2]);
-        let t_gpu = t_cpu.to::<Cuda>().unwrap();
-        assert_eq!(t_gpu.device(), Device::Cuda);
-        assert_eq!(t_gpu.shape, t_cpu.shape);
-        assert_eq!(t_gpu.size, t_cpu.size);
-        assert_eq!(t_gpu.strides, t_cpu.strides);
-        assert_eq!(t_gpu.data().unwrap(), t_cpu.data().unwrap());
+        let t_cuda = t_cpu.to::<Cuda>().unwrap();
+        assert_eq!(t_cuda.device(), Device::Cuda);
+        assert_eq!(t_cuda.shape, t_cpu.shape);
+        assert_eq!(t_cuda.len, t_cpu.len);
+        assert_eq!(t_cuda.strides, t_cpu.strides);
+        assert_eq!(t_cuda.data().unwrap(), t_cpu.data().unwrap());
     }
 
     #[test]
@@ -634,5 +658,45 @@ mod tests {
         assert_eq!(t.strides, &[1]);
         assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
         assert_eq!(t.device(), Device::Cuda);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_matmul_same_shapes_cuda() {
+        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
+        let t3 = t1.matmul(t2);
+
+        assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, &[2, 2]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_matmul_diff_shapes_cuda() {
+        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4., 5., 6.], &[2, 3]).unwrap();
+        let t2 = Tensor::<Cuda, f32>::from_data(
+            &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
+            &[3, 4],
+        )
+        .unwrap();
+        let t3 = t1.matmul(t2);
+
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![62., 68., 74., 80., 143., 158., 173., 188.]
+        );
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, &[2, 4]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
+    fn test_tensor_matmul_bad_shapes_cuda() {
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t2 = Tensor::new(&[5., 6.], &[1, 2]);
+        let _ = t1.matmul(t2);
     }
 }

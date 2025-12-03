@@ -7,39 +7,26 @@ use tensor::Tensor;
 pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn test_time() -> InfersResult<()> {
-    let start = Instant::now();
-    let t1 = Tensor::rand(&[700, 700, 700]);
-    let t2 = Tensor::rand(&[700, 700, 700]);
-    println!("Rand duration: {:?}", start.elapsed());
+    let t1 = Tensor::rand(&[3000, 3000]);
+    let t2 = Tensor::rand(&[3000, 3000]);
 
-    println!("Running on CPU");
     let start = Instant::now();
-    let _ = t1 + t2;
-    println!("Add duration: {:?}", start.elapsed());
+    let _ = t1.matmul(t2);
+    println!("Matmul (CPU) duration: {:?}", start.elapsed());
 
     #[cfg(feature = "cuda")]
     {
         use crate::backends::Cuda;
-        let t1 = Tensor::rand(&[700, 700, 700]).to::<Cuda>()?;
-        let t2 = Tensor::rand(&[700, 700, 700]).to::<Cuda>()?;
-        println!("Running on CUDA");
+        let t1 = Tensor::rand(&[3000, 3000]).to::<Cuda>()?;
+        let t2 = Tensor::rand(&[3000, 3000]).to::<Cuda>()?;
         let start = Instant::now();
-        let _ = t1 + t2;
-        println!("Duration: {:?}", start.elapsed());
+        let _ = t1.matmul(t2);
+        println!("Matmul (CUDA) duration: {:?}", start.elapsed());
         // println!("{t3}");
     }
 
     Ok(())
 }
 fn main() -> InfersResult<()> {
-    test_time()?;
-    #[cfg(feature = "cuda")]
-    {
-        use crate::backends::Cuda;
-        let t = Tensor::rand(&[2, 2]).to::<Cuda>()?;
-        let t = t.relu();
-        println!("{t}");
-    }
-
-    Ok(())
+    test_time()
 }
