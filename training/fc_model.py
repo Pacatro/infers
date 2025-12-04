@@ -91,7 +91,15 @@ def main():
         )
 
     dummy_input = torch.randn(1, 1, 28, 28, device=device)
-    torch.onnx.export(model, (dummy_input,), ONNX_PATH)
+    onnx_program = torch.onnx.export(
+        model,
+        (dummy_input,),
+        dynamo=True,
+    )
+    assert onnx_program is not None
+    onnx_program.save(
+        ONNX_PATH, include_initializers=True, keep_initializers_as_inputs=False
+    )
     print(f"Model saved as {ONNX_PATH}")
 
 
