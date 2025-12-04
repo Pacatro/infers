@@ -15,6 +15,7 @@ Inspirations:
   - [x] Relu
   - [x] Flatten
   - [x] Gemm
+  - [ ] Implement batching multiplications (allow matmuls for tensors with ndims > 2)
 - [x] Compile ONNX protobufs
   - [x] Load ONNX model
 - [ ] Construct computational graph (Parsing protos from ONNX to own implementations)
