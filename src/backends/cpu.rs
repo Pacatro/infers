@@ -57,6 +57,13 @@ where
             .collect()
     }
 
+    fn mul(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
+        lhs.par_iter()
+            .zip(rhs.par_iter())
+            .map(|(&a, &b)| a * b)
+            .collect()
+    }
+
     fn relu(input: &Self::Storage, _size: usize) -> Self::Storage {
         input
             .par_iter()

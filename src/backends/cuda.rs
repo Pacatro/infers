@@ -133,6 +133,31 @@ impl Backend<f32> for Cuda {
         }
     }
 
+    fn mul(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
+        let ctx = lhs.context.clone();
+        let stream = ctx.default_stream();
+
+        let func = compile_kernel(include_str!("./kernels/mul.cu"), "mul", &ctx).unwrap();
+
+        let config = LaunchConfig::for_num_elems(size as u32);
+        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&lhs.buffer)
+                .arg(&rhs.buffer)
+                .arg(&mut out_device)
+                .arg(&size)
+                .launch(config)
+                .unwrap();
+        }
+
+        CudaStorage {
+            context: ctx,
+            buffer: out_device,
+        }
+    }
+
     fn relu(input: &Self::Storage, size: usize) -> Self::Storage {
         let ctx = input.context.clone();
         let stream = ctx.default_stream();
