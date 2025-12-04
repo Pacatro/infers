@@ -21,6 +21,37 @@ fn compile_kernel(
     module.load_function(func_name).map_err(|e| e.into())
 }
 
+// Performs a general elementwise operation between two tensors
+fn execute_elementwise_op(
+    lhs: &CudaStorage,
+    rhs: &CudaStorage,
+    size: usize,
+    src: &str,
+    func_name: &str,
+) -> InfersResult<CudaStorage> {
+    let ctx = lhs.context.clone();
+    let stream = ctx.default_stream();
+
+    let func = compile_kernel(src, func_name, &ctx)?;
+
+    let config = LaunchConfig::for_num_elems(size as u32);
+    let mut out_device = stream.alloc_zeros::<f32>(size)?;
+    unsafe {
+        stream
+            .launch_builder(&func)
+            .arg(&lhs.buffer)
+            .arg(&rhs.buffer)
+            .arg(&mut out_device)
+            .arg(&size)
+            .launch(config)?;
+    }
+
+    Ok(CudaStorage {
+        context: ctx,
+        buffer: out_device,
+    })
+}
+
 /// Device-specific storage structure for the CUDA backend.
 ///
 /// This wraps the necessary CUDA context and the actual device buffer.
@@ -84,78 +115,15 @@ impl Backend<f32> for Cuda {
     }
 
     fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        let ctx = lhs.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/add.cu"), "add", &ctx).unwrap();
-
-        let config = LaunchConfig::for_num_elems(size as u32);
-        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
-        unsafe {
-            stream
-                .launch_builder(&func)
-                .arg(&lhs.buffer)
-                .arg(&rhs.buffer)
-                .arg(&mut out_device)
-                .arg(&size)
-                .launch(config)
-                .unwrap();
-        }
-
-        CudaStorage {
-            context: ctx,
-            buffer: out_device,
-        }
+        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/add.cu"), "add").unwrap()
     }
 
     fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        let ctx = lhs.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/sub.cu"), "sub", &ctx).unwrap();
-
-        let config = LaunchConfig::for_num_elems(size as u32);
-        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
-        unsafe {
-            stream
-                .launch_builder(&func)
-                .arg(&lhs.buffer)
-                .arg(&rhs.buffer)
-                .arg(&mut out_device)
-                .arg(&size)
-                .launch(config)
-                .unwrap();
-        }
-
-        CudaStorage {
-            context: ctx,
-            buffer: out_device,
-        }
+        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/sub.cu"), "sub").unwrap()
     }
 
     fn mul(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        let ctx = lhs.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/mul.cu"), "mul", &ctx).unwrap();
-
-        let config = LaunchConfig::for_num_elems(size as u32);
-        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
-        unsafe {
-            stream
-                .launch_builder(&func)
-                .arg(&lhs.buffer)
-                .arg(&rhs.buffer)
-                .arg(&mut out_device)
-                .arg(&size)
-                .launch(config)
-                .unwrap();
-        }
-
-        CudaStorage {
-            context: ctx,
-            buffer: out_device,
-        }
+        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/mul.cu"), "mul").unwrap()
     }
 
     fn relu(input: &Self::Storage, size: usize) -> Self::Storage {
