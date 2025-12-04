@@ -139,6 +139,34 @@ where
     }
 }
 
+impl<B, T> ops::Mul for Tensor<B, T>
+where
+    B: Backend<T>,
+    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
+{
+    type Output = Tensor<B, T>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.shape, rhs.shape);
+
+        assert_eq!(
+            self.device(),
+            rhs.device(),
+            "The two tensors must be on the same device."
+        );
+
+        let new_storage = B::mul(&self.storage, &rhs.storage, self.len);
+
+        Self::Output {
+            storage: new_storage,
+            shape: self.shape,
+            strides: self.strides,
+            len: self.len,
+            _backend: PhantomData,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     #[cfg(feature = "cuda")]
@@ -159,6 +187,14 @@ mod test {
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t3 = t1 - t2;
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
+    }
+
+    #[test]
+    fn test_tensor_mul_cpu() {
+        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
+        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t3 = t1 * t2;
+        assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
     }
 
     #[test]
@@ -259,6 +295,15 @@ mod test {
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
         assert_eq!(t3.device(), Device::Cuda);
         assert_eq!(t3.shape, &[2, 2]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_mul_cuda() {
+        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
+        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
+        let t3 = t1 * t2;
+        assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
     }
 
     #[test]
