@@ -1,11 +1,14 @@
 use prost::Message;
 use std::{fs::File, io::Read};
 
-use infers::{InfersResult, onnx::ModelProto};
+use infers::{InfersResult, Tensor, onnx::ModelProto};
 
 const MODEL_PATH: &str = "onnx_models/mnist_fc_model.onnx";
 
 fn main() -> InfersResult<()> {
+    let t = Tensor::randn(&[2, 2]);
+    println!("{}", t);
+
     let mut file = File::open(MODEL_PATH)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;

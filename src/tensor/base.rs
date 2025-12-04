@@ -1,10 +1,9 @@
-use num_traits::{Float, FromPrimitive, Num};
+use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops;
 
 use crate::InfersResult;
 use crate::backends::{Backend, Cpu, Device};
@@ -51,12 +50,12 @@ where
     pub shape: Vec<usize>,
     /// The number of elements to skip in the linear storage to advance one unit along each dimension.
     pub strides: Vec<usize>,
-    /// The total number of elements in the tensor.
-    len: usize,
     /// The underlying device-specific storage for the tensor data.
     pub storage: B::Storage,
+    /// The total number of elements in the tensor.
+    pub(crate) len: usize,
     /// Marker to hold the backend type without storing data.
-    _backend: PhantomData<B>,
+    pub(crate) _backend: PhantomData<B>,
 }
 
 impl Tensor {
@@ -72,7 +71,6 @@ impl Tensor {
     /// A tensor of type `f32` with random values.
     pub fn rand(shape: &[usize]) -> Self {
         let len = shape.iter().product();
-        let strides = compute_strides(shape);
 
         let data = (0..len)
             .into_par_iter()
@@ -83,7 +81,7 @@ impl Tensor {
             storage: data,
             shape: shape.to_vec(),
             len,
-            strides,
+            strides: compute_strides(shape),
             _backend: PhantomData,
         }
     }
@@ -100,7 +98,6 @@ impl Tensor {
     /// A tensor of type `f32` with normally distributed random values.
     pub fn randn(shape: &[usize]) -> Self {
         let len: usize = shape.iter().product();
-        let strides = compute_strides(shape);
 
         let data = (0..len)
             .into_par_iter()
@@ -114,7 +111,7 @@ impl Tensor {
             storage: data,
             shape: shape.to_vec(),
             len,
-            strides,
+            strides: compute_strides(shape),
             _backend: PhantomData,
         }
     }
@@ -308,6 +305,7 @@ where
         self.len == 0
     }
 
+    /// Returns the number of dimensions of the tensor.
     pub fn ndims(&self) -> usize {
         self.shape.len()
     }
@@ -400,104 +398,6 @@ where
     }
 }
 
-impl<B, T> ops::Add for Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
-{
-    type Output = Tensor<B, T>;
-
-    /// Performs element-wise addition between two tensors on the same device.
-    ///
-    /// The operation is delegated to the backend's efficient `add` method.
-    /// Returns a new tensor containing the result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    fn add(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let new_storage = B::add(&self.storage, &rhs.storage, self.len);
-
-        Self::Output {
-            storage: new_storage,
-            shape: self.shape,
-            strides: self.strides,
-            len: self.len,
-            _backend: PhantomData,
-        }
-    }
-}
-
-impl<B, T> ops::Sub for Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
-{
-    type Output = Tensor<B, T>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let new_storage = B::sub(&self.storage, &rhs.storage, self.len);
-
-        Self::Output {
-            storage: new_storage,
-            shape: self.shape,
-            strides: self.strides,
-            len: self.len,
-            _backend: PhantomData,
-        }
-    }
-}
-
-const MAX_TENSOR_DISPLAY: usize = 10;
-
-impl<B, T> Display for Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Num + Debug + Clone + Copy + FromPrimitive,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.len > MAX_TENSOR_DISPLAY {
-            return write!(
-                f,
-                "Tensor(data=[...], shape={:?}, device={}, dtype={})",
-                self.shape,
-                B::device(),
-                std::any::type_name::<T>()
-            );
-        }
-
-        let data = match B::copy_to_host(&self.storage) {
-            Ok(data) => data,
-            Err(e) => return write!(f, "{:?}", e),
-        };
-
-        write!(
-            f,
-            "Tensor(data={:?}, shape={:?}, device={}, dtype={})",
-            data,
-            self.shape,
-            B::device(),
-            std::any::type_name::<T>()
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::backends::Cpu;
@@ -573,22 +473,6 @@ mod tests {
         assert_eq!(t.get(&[0, 0]), 1);
         t.set(&[0, 0], 10);
         assert_eq!(t.get(&[0, 0]), 10);
-    }
-
-    #[test]
-    fn test_tensor_add_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = t1 + t2;
-        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
-    }
-
-    #[test]
-    fn test_tensor_sub_cpu() {
-        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = t1 - t2;
-        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
     }
 
     #[test]
@@ -672,31 +556,6 @@ mod tests {
         assert_eq!(t_cuda.len, t_cpu.len);
         assert_eq!(t_cuda.strides, t_cpu.strides);
         assert_eq!(t_cuda.data().unwrap(), t_cpu.data().unwrap());
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_add_cuda() {
-        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = t1 + t2;
-
-        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 2]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_sub_cuda() {
-        let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-
-        let t3 = t1 - t2;
-
-        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 2]);
     }
 
     #[test]
