@@ -3,24 +3,32 @@ use std::{fs::File, io::Read};
 
 use infers::{InfersResult, onnx::ModelProto};
 
+const MODEL_PATH: &str = "onnx_models/mnist_fc_model.onnx";
+
 fn main() -> InfersResult<()> {
-    let mut file = File::open("onnx_models/mnist_fc_model.onnx")?;
+    let mut file = File::open(MODEL_PATH)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
-
-    // Decodificar el buffer protobuf
     let model = ModelProto::decode(&*buffer)?;
 
-    // Por ejemplo: obtener el grafo, número de nodos, tensores inicializadores (pesos)
     if let Some(graph) = model.graph.as_ref() {
-        println!("Graph name: {:?}", graph.name);
-        println!("Number of nodes: {}", graph.node.len());
-        println!(
-            "Number of initializers (weights): {}",
-            graph.initializer.len()
-        );
-    } else {
-        println!("No graph in the model");
+        for init in graph.initializer.iter() {
+            println!("Node name: {:?}", init.name);
+            if !init.float_data.is_empty() {
+                println!("Found float data");
+                println!("{:?}", init.float_data);
+            } else if let Some(data) = init.raw_data.as_ref() {
+                // The raw data is a sequence of bytes, each representing a float.
+                // If we want to convert it to a vector of f32, we need to
+                // get the bytes in chunks of 4 (4*8 = 32) and then convert them using little-endian.
+                let floats = data
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect::<Vec<f32>>();
+                println!("Found raw data");
+                println!("{:?}", floats);
+            }
+        }
     }
 
     Ok(())
