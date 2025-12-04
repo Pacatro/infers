@@ -71,7 +71,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::Tensor;
-    use crate::backends::{Cuda, Device};
+    #[cfg(feature = "cuda")]
+    use crate::backends::Cuda;
 
     #[test]
     fn test_tensor_add_cpu() {
@@ -92,6 +93,8 @@ mod test {
     #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_add_cuda() {
+        use crate::backends::Device;
+
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t3 = t1 + t2;
@@ -104,6 +107,8 @@ mod test {
     #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_sub_cuda() {
+        use crate::backends::Device;
+
         let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
 
