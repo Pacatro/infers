@@ -1,4 +1,5 @@
 pub mod backends;
+pub mod graph;
 mod tensor;
 
 pub mod onnx {
@@ -6,5 +7,6 @@ pub mod onnx {
 }
 
 pub use tensor::Tensor;
+// pub use graph::Graph;
 
 pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;

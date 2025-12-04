@@ -17,8 +17,12 @@ Inspirations:
   - [x] Gemm
 - [x] Compile ONNX protobufs
   - [x] Load ONNX model
-- [ ] Construct computational graph
+- [ ] Construct computational graph (Parsing protos from ONNX to own implementations)
+  - [ ] Attributes (Ops parameters)
+  - [ ] Nodes (Operations)
+  - [ ] Tensors
 - [ ] Run inference with user inputs
+  - [ ] Session
 - [ ] Display results
 
 ## Additional features
