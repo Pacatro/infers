@@ -26,9 +26,16 @@ fn main() -> InfersResult<()> {
                     .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
                     .collect::<Vec<f32>>();
                 println!("Found raw data");
-                println!("{:?}", floats);
+                println!("{:?}", floats.first_chunk::<10>());
             }
         }
+    }
+
+    let graph = model.graph.unwrap();
+
+    for node in graph.node.iter() {
+        println!("Node name: {}", node.name());
+        println!("Op type: {}", node.op_type());
     }
 
     Ok(())
