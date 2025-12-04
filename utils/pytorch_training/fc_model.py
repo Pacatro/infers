@@ -4,8 +4,8 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from pathlib import Path
 
-ONNX_PATH = "../onnx_models/mnist_fc_model.onnx"
-DATA_PATH = "../data"
+ONNX_PATH = "../../onnx_models/mnist_fc_model.onnx"
+DATA_PATH = "../../data"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
