@@ -47,11 +47,11 @@ where
     B: Backend<T>,
 {
     /// The size of the tensor along each dimension (e.g., `[rows, columns]`).
-    pub shape: Vec<usize>,
+    pub(crate) shape: Vec<usize>,
     /// The number of elements to skip in the linear storage to advance one unit along each dimension.
-    pub strides: Vec<usize>,
+    pub(crate) strides: Vec<usize>,
     /// The underlying device-specific storage for the tensor data.
-    pub storage: B::Storage,
+    pub(crate) storage: B::Storage,
     /// The total number of elements in the tensor.
     pub(crate) len: usize,
     /// Marker to hold the backend type without storing data.
@@ -308,6 +308,11 @@ where
     /// Returns the number of dimensions of the tensor.
     pub fn ndims(&self) -> usize {
         self.shape.len()
+    }
+
+    /// Returns the shape of the tensor.
+    pub fn shape(&self) -> &[usize] {
+        self.shape.as_slice()
     }
 
     /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).
