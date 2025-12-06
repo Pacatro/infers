@@ -1,7 +1,7 @@
 use prost::Message;
 use std::{fs::File, io::Read};
 
-use infers::{InfersResult, Tensor, onnx::ModelProto};
+use infers::{InfersResult, Tensor, graph::Graph, onnx::ModelProto};
 
 const MODEL_PATH: &str = "onnx_models/mnist_fc_model.onnx";
 
@@ -34,12 +34,10 @@ fn main() -> InfersResult<()> {
         }
     }
 
-    let graph = model.graph.unwrap();
+    let graph = Graph::try_from(&model.graph.unwrap())?;
 
-    for node in graph.node.iter() {
-        println!("Node name: {}", node.name());
-        println!("Op type: {}", node.op_type());
+    for node in graph.sorted_nodes.iter() {
+        println!("{:?}\n", node);
     }
-
     Ok(())
 }

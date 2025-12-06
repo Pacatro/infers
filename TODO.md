@@ -18,13 +18,13 @@ Inspirations:
   - [ ] Implement batching multiplications (allow matmuls for tensors with ndims > 2)
 - [x] Compile ONNX protobufs
   - [x] Load ONNX model
-- [ ] Construct computational graph (Parsing protos from ONNX to own implementations)
+- [x] Construct computational graph (Parsing protos from ONNX to own implementations)
   - [x] Attributes (Ops parameters)
   - [x] Nodes (Operations)
-  - [ ] Tensors
-- [ ] Topological sorting
-- [ ] Run inference with user inputs
-  - [ ] Session
+  - [x] Graph
+  - [x] Topological sorting
+-[ ] Inference Session
+  - [ ] Run inference with user inputs
 - [ ] Display results
 
 ## Additional features
