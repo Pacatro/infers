@@ -65,7 +65,7 @@ impl Graph {
                     self.topological_sort_util(child_name, visited, stack);
                 }
             }
-            stack.push(node_info.node.clone());
+            stack.insert(0, node_info.node.clone());
         }
     }
 
@@ -97,7 +97,7 @@ impl Graph {
             }
         }
 
-        stack.into_iter().rev().collect()
+        stack
     }
 }
 
