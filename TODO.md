@@ -19,9 +19,10 @@ Inspirations:
 - [x] Compile ONNX protobufs
   - [x] Load ONNX model
 - [ ] Construct computational graph (Parsing protos from ONNX to own implementations)
-  - [ ] Attributes (Ops parameters)
-  - [ ] Nodes (Operations)
+  - [x] Attributes (Ops parameters)
+  - [x] Nodes (Operations)
   - [ ] Tensors
+- [ ] Topological sorting
 - [ ] Run inference with user inputs
   - [ ] Session
 - [ ] Display results

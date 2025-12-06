@@ -1,0 +1,107 @@
+use crate::{
+    InfersResult,
+    graph::{Attribute, OpType},
+    onnx::NodeProto,
+};
+use std::{collections::HashMap, str::FromStr};
+
+/// Represents a node in a computation graph.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Node {
+    /// Unique name of the node.
+    pub name: String,
+    /// Type of operation this node performs.
+    pub op_type: OpType,
+    /// List of input tensor names connected to this node.
+    pub input: Vec<String>,
+    /// List of output tensor names produced by this node.
+    pub output: Vec<String>,
+    /// Key-value pairs of attributes that configure the node's operation.
+    attributes: HashMap<String, Attribute>,
+}
+
+impl Node {
+    /// Creates a new `Node` with the given name and operation type.
+    pub fn new(name: String, op_type: OpType) -> Self {
+        Self {
+            name,
+            op_type,
+            input: vec![],
+            output: vec![],
+            attributes: HashMap::new(),
+        }
+    }
+
+    /// Returns the value of the attribute with the given name, if it exists.
+    pub fn get_attribute(&self, name: &str) -> Option<&Attribute> {
+        self.attributes.get(name)
+    }
+}
+
+impl TryFrom<&NodeProto> for Node {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(node_proto: &NodeProto) -> InfersResult<Node> {
+        let name = node_proto.name().to_string();
+        let op_type = OpType::from_str(node_proto.op_type())?;
+        let input = node_proto.input.clone();
+        let output = node_proto.output.clone();
+
+        let mut attributes = HashMap::new();
+        for attr_proto in node_proto.attribute.iter() {
+            attributes.insert(
+                attr_proto.name().to_string(),
+                Attribute::try_from(attr_proto)?,
+            );
+        }
+
+        Ok(Self {
+            name,
+            op_type,
+            input,
+            output,
+            attributes,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        graph::AttributeValue,
+        onnx::{AttributeProto, NodeProto, attribute_proto::AttributeType},
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_node_from_proto() {
+        let attr_proto = AttributeProto {
+            name: Some("test".to_string()),
+            r#type: Some(AttributeType::Float.into()),
+            f: Some(1.0),
+            ..Default::default()
+        };
+
+        let node_proto = NodeProto {
+            name: Some("test".to_string()),
+            op_type: Some("Add".to_string()),
+            input: vec!["input".to_string()],
+            output: vec!["output".to_string()],
+            attribute: vec![attr_proto],
+            ..Default::default()
+        };
+
+        let node = Node::try_from(&node_proto).unwrap();
+
+        assert_eq!(node.name, "test");
+        assert_eq!(node.op_type, OpType::Add);
+        assert_eq!(node.input, vec!["input".to_string()]);
+        assert_eq!(node.output, vec!["output".to_string()]);
+        assert_eq!(node.attributes.len(), 1);
+        assert_eq!(
+            node.get_attribute("test").unwrap().value,
+            AttributeValue::Float(1.0)
+        );
+    }
+}

@@ -43,7 +43,7 @@ impl FromStr for OpType {
             "Output" => Ok(OpType::Output),
             "Add" => Ok(OpType::Add),
             "Gemm" => Ok(OpType::Gemm),
-            // ONNX uses "Reshape" for flatten:
+            // ONNX use "Reshape" for flatten:
             "Reshape" | "Flatten" => Ok(OpType::Flatten),
             "Relu" => Ok(OpType::Relu),
             other => Err(format!("Unknown op type: {}", other).into()),
