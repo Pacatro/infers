@@ -10,6 +10,99 @@ where
     B: Backend<T>,
     T: Num + FromPrimitive + Clone + Copy + FromPrimitive + Debug,
 {
+    /// Performs element-wise addition between two tensors on the same device.
+    ///
+    /// The operation is delegated to the backend's efficient `add` method.
+    /// Returns a new tensor containing the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensors have different shapes or reside on different devices.
+    pub fn add(&self, rhs: &Self) -> Self {
+        assert_eq!(self.shape, rhs.shape);
+
+        assert_eq!(
+            self.device(),
+            rhs.device(),
+            "The two tensors must be on the same device."
+        );
+
+        let new_storage = B::add(&self.storage, &rhs.storage, self.len);
+
+        let shape = self.shape();
+        let strides = &self.strides;
+
+        Self {
+            storage: new_storage,
+            shape: shape.to_vec(),
+            strides: strides.to_vec(),
+            len: self.len,
+            _backend: PhantomData,
+        }
+    }
+
+    /// Performs element-wise subtraction between two tensors on the same device.
+    ///
+    /// The operation is delegated to the backend's efficient `sub` method.
+    /// Returns a new tensor containing the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensors have different shapes or reside on different devices.
+    pub fn sub(&self, rhs: &Self) -> Self {
+        assert_eq!(self.shape, rhs.shape);
+
+        assert_eq!(
+            self.device(),
+            rhs.device(),
+            "The two tensors must be on the same device."
+        );
+
+        let new_storage = B::sub(&self.storage, &rhs.storage, self.len);
+
+        let shape = self.shape();
+        let strides = &self.strides;
+
+        Self {
+            storage: new_storage,
+            shape: shape.to_vec(),
+            strides: strides.to_vec(),
+            len: self.len,
+            _backend: PhantomData,
+        }
+    }
+
+    /// Performs element-wise multiplication between two tensors on the same device.
+    ///
+    /// The operation is delegated to the backend's efficient `mul` method.
+    /// Returns a new tensor containing the result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensors have different shapes or reside on different devices.
+    pub fn mul(&self, rhs: &Self) -> Self {
+        assert_eq!(self.shape, rhs.shape);
+
+        assert_eq!(
+            self.device(),
+            rhs.device(),
+            "The two tensors must be on the same device."
+        );
+
+        let new_storage = B::mul(&self.storage, &rhs.storage, self.len);
+
+        let shape = self.shape();
+        let strides = &self.strides;
+
+        Self {
+            storage: new_storage,
+            shape: shape.to_vec(),
+            strides: strides.to_vec(),
+            len: self.len,
+            _backend: PhantomData,
+        }
+    }
+
     /// Applies the ReLU activation function to the tensor.
     ///
     /// # Returns
@@ -75,43 +168,20 @@ where
         }
     }
 }
-impl<B, T> ops::Add for Tensor<B, T>
+
+impl<B, T> ops::Add for &Tensor<B, T>
 where
     B: Backend<T>,
     T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
 {
     type Output = Tensor<B, T>;
 
-    /// Performs element-wise addition between two tensors on the same device.
-    ///
-    /// The operation is delegated to the backend's efficient `add` method.
-    /// Returns a new tensor containing the result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
     fn add(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let new_storage = B::add(&self.storage, &rhs.storage, self.len);
-
-        Self::Output {
-            storage: new_storage,
-            shape: self.shape,
-            strides: self.strides,
-            len: self.len,
-            _backend: PhantomData,
-        }
+        self.add(rhs)
     }
 }
 
-impl<B, T> ops::Sub for Tensor<B, T>
+impl<B, T> ops::Sub for &Tensor<B, T>
 where
     B: Backend<T>,
     T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
@@ -119,27 +189,11 @@ where
     type Output = Tensor<B, T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let new_storage = B::sub(&self.storage, &rhs.storage, self.len);
-
-        Self::Output {
-            storage: new_storage,
-            shape: self.shape,
-            strides: self.strides,
-            len: self.len,
-            _backend: PhantomData,
-        }
+        self.sub(rhs)
     }
 }
 
-impl<B, T> ops::Mul for Tensor<B, T>
+impl<B, T> ops::Mul for &Tensor<B, T>
 where
     B: Backend<T>,
     T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
@@ -147,23 +201,7 @@ where
     type Output = Tensor<B, T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let new_storage = B::mul(&self.storage, &rhs.storage, self.len);
-
-        Self::Output {
-            storage: new_storage,
-            shape: self.shape,
-            strides: self.strides,
-            len: self.len,
-            _backend: PhantomData,
-        }
+        self.mul(rhs)
     }
 }
 
@@ -177,7 +215,7 @@ mod test {
     fn test_tensor_add_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = t1 + t2;
+        let t3 = &t1 + &t2;
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
     }
 
@@ -185,7 +223,7 @@ mod test {
     fn test_tensor_sub_cpu() {
         let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = t1 - t2;
+        let t3 = &t1 - &t2;
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
     }
 
@@ -193,7 +231,7 @@ mod test {
     fn test_tensor_mul_cpu() {
         let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = t1 * t2;
+        let t3 = &t1 * &t2;
         assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
     }
 
@@ -275,7 +313,7 @@ mod test {
 
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = t1 + t2;
+        let t3 = &t1 + &t2;
 
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
         assert_eq!(t3.device(), Device::Cuda);
@@ -290,7 +328,7 @@ mod test {
         let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
 
-        let t3 = t1 - t2;
+        let t3 = &t1 - &t2;
 
         assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
         assert_eq!(t3.device(), Device::Cuda);
@@ -302,7 +340,7 @@ mod test {
     fn test_tensor_mul_cuda() {
         let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = t1 * t2;
+        let t3 = &t1 * &t2;
         assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
     }
 
