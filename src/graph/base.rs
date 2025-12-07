@@ -43,6 +43,16 @@ impl Graph {
         self.nodes.insert(node.name.to_string(), info);
     }
 
+    /// Iterate over the sorted nodes in the graph.
+    pub fn iter(&self) -> impl Iterator<Item = &Node> {
+        self.sorted_nodes.iter()
+    }
+
+    /// Mutably iterate over the sorted nodes in the graph.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Node> {
+        self.sorted_nodes.iter_mut()
+    }
+
     /// Checks if a node is an input node.
     fn is_input_node(&self, node: &Node) -> bool {
         node.input
@@ -95,6 +105,24 @@ impl Graph {
             }
             stack.insert(0, node_info.node.clone());
         }
+    }
+}
+
+impl<'a> IntoIterator for &'a Graph {
+    type Item = &'a Node;
+    type IntoIter = std::slice::Iter<'a, Node>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.sorted_nodes.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Graph {
+    type Item = &'a mut Node;
+    type IntoIter = std::slice::IterMut<'a, Node>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.sorted_nodes.iter_mut()
     }
 }
 
@@ -314,5 +342,29 @@ mod tests {
         assert!(info_b.parents.contains(&String::from("A")),);
         assert_eq!(graph.inputs, vec!["input_global"]);
         assert_eq!(graph.outputs, vec!["output_global"]);
+    }
+
+    #[test]
+    fn test_graph_iter() {
+        // A(in: global_in, out: x) -> B(in: x, out: global_out)
+        let (node_a, _) = create_node(
+            "A",
+            &OpType::Input.to_string(),
+            &["input_global"],
+            &["tensor_x"],
+        );
+
+        let (node_b, _) = create_node(
+            "B",
+            &OpType::Add.to_string(),
+            &["tensor_x"],
+            &["output_global"],
+        );
+
+        let graph = build_graph_from_nodes(vec![node_a.clone(), node_b.clone()], &["input_global"]);
+
+        let mut iter = graph.iter();
+        assert_eq!(iter.next().unwrap(), &node_a);
+        assert_eq!(iter.next().unwrap(), &node_b);
     }
 }
