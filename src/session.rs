@@ -3,21 +3,27 @@ use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
     InfersResult, Tensor,
-    backends::Device,
+    backends::{Backend, Device},
     graph::{Graph, Node, OpType},
     onnx::{ModelProto, TensorProto},
 };
 
 #[derive(Debug, Clone)]
-pub struct InferenceSession {
+pub struct InferenceSession<B>
+where
+    B: Backend<f32>,
+{
     pub model_path: String,
     pub graph: Graph,
-    pub weights: HashMap<String, Tensor>,
+    pub weights: HashMap<String, Tensor<B, f32>>,
     pub device: Device,
 }
 
-impl InferenceSession {
-    pub fn new(model_path: &str, device: Device) -> InfersResult<Self> {
+impl<B> InferenceSession<B>
+where
+    B: Backend<f32>,
+{
+    pub fn new(model_path: &str) -> InfersResult<Self> {
         let mut file = File::open(model_path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -38,11 +44,11 @@ impl InferenceSession {
             model_path: model_path.to_string(),
             graph,
             weights,
-            device,
+            device: B::device(),
         })
     }
 
-    fn load_weights(initializer: &[TensorProto]) -> InfersResult<HashMap<String, Tensor>> {
+    fn load_weights(initializer: &[TensorProto]) -> InfersResult<HashMap<String, Tensor<B, f32>>> {
         let mut weights = HashMap::new();
 
         for init in initializer.iter() {
@@ -51,7 +57,7 @@ impl InferenceSession {
             if !init.float_data.is_empty() {
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::new(&init.float_data, dims.as_slice()),
+                    Tensor::<B, f32>::from_data(&init.float_data, dims.as_slice())?,
                 );
             } else if let Some(data) = init.raw_data.as_ref() {
                 // The raw data is a sequence of bytes, each representing a float.
@@ -79,7 +85,7 @@ impl InferenceSession {
 
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::new(&data, shape.as_slice()),
+                    Tensor::<B, f32>::from_data(&data, shape.as_slice())?,
                 );
             }
         }
@@ -87,7 +93,7 @@ impl InferenceSession {
         Ok(weights)
     }
 
-    pub fn run(&mut self, input: Tensor) -> InfersResult<()> {
+    pub fn run(&mut self, input: Tensor<B, f32>) -> InfersResult<()> {
         self.weights.insert(self.graph.inputs[0].to_string(), input);
         for node in self.graph.iter() {
             let inputs = self.prepare_inputs(node);
@@ -103,7 +109,11 @@ impl InferenceSession {
         Ok(())
     }
 
-    fn evaluate_node(&self, node: &Node, inputs: Vec<Tensor>) -> InfersResult<Tensor> {
+    fn evaluate_node(
+        &self,
+        node: &Node,
+        inputs: Vec<Tensor<B, f32>>,
+    ) -> InfersResult<Tensor<B, f32>> {
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
@@ -144,7 +154,7 @@ impl InferenceSession {
         }
     }
 
-    fn prepare_inputs(&self, node: &Node) -> Vec<Tensor> {
+    fn prepare_inputs(&self, node: &Node) -> Vec<Tensor<B, f32>> {
         let mut inputs = vec![];
 
         for input_name in &node.input {
@@ -159,12 +169,16 @@ impl InferenceSession {
 
 #[cfg(test)]
 mod tests {
+    use crate::backends::Cpu;
+    #[cfg(feature = "cuda")]
+    use crate::backends::Cuda;
+
     use super::*;
 
     // TODO: Create test for method `new`
 
     #[test]
-    fn test_load_weights_float_data() {
+    fn test_load_weights_float_data_cpu() {
         let tensor_proto = TensorProto {
             name: Some("tensor".into()),
             dims: vec![2, 2],
@@ -172,17 +186,19 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::load_weights(&[tensor_proto]).unwrap();
+        let weights = InferenceSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
-        assert_eq!(weights["tensor"].shape(), &[2, 2]);
-        assert_eq!(weights["tensor"].len(), 4);
-        assert_eq!(weights["tensor"].strides, &[2, 1]);
-        assert_eq!(weights["tensor"].data().unwrap(), vec![1., 2., 3., 4.]);
+        let tensor = &weights["tensor"];
+        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
+        assert!(tensor.device() == Device::Cpu);
     }
 
     #[test]
-    fn test_load_weights_raw_data() {
+    fn test_load_weights_raw_data_cpu() {
         let orig: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
 
         let raw_data = orig
@@ -197,7 +213,7 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::load_weights(&[tensor_proto]).unwrap();
+        let weights = InferenceSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
@@ -205,5 +221,55 @@ mod tests {
         assert_eq!(tensor.len(), 4);
         assert_eq!(tensor.strides, &[2, 1]);
         assert_eq!(tensor.data().unwrap(), orig);
+        assert!(tensor.device() == Device::Cpu);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn test_load_weights_float_data_cuda() {
+        let tensor_proto = TensorProto {
+            name: Some("tensor".into()),
+            dims: vec![2, 2],
+            float_data: vec![1., 2., 3., 4.],
+            ..Default::default()
+        };
+
+        let weights = InferenceSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
+
+        assert_eq!(weights.len(), 1);
+        let tensor = &weights["tensor"];
+        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
+        assert!(tensor.device() == Device::Cuda);
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn test_load_weights_raw_data_cuda() {
+        let orig: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
+
+        let raw_data = orig
+            .iter()
+            .flat_map(|&x| x.to_le_bytes().to_vec())
+            .collect::<Vec<u8>>();
+
+        let tensor_proto = TensorProto {
+            name: Some("tensor".into()),
+            dims: vec![2, 2],
+            raw_data: Some(raw_data),
+            ..Default::default()
+        };
+
+        let weights = InferenceSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
+
+        assert_eq!(weights.len(), 1);
+        let tensor = &weights["tensor"];
+        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.data().unwrap(), orig);
+        assert_eq!(tensor.device(), Device::Cuda);
     }
 }
