@@ -21,7 +21,7 @@ fn compile_kernel(
     module.load_function(func_name).map_err(|e| e.into())
 }
 
-// Performs a general elementwise operation between two tensors
+/// Performs a general elementwise operation between two tensors
 fn execute_elementwise_op(
     lhs: &CudaStorage,
     rhs: &CudaStorage,

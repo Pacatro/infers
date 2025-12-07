@@ -50,25 +50,6 @@ impl Graph {
             .any(|input_name| self.inputs.contains(input_name))
     }
 
-    /// Helper recursive function for topological sort.
-    fn topological_sort_util(
-        &self,
-        node_name: &str,
-        visited: &mut HashSet<String>,
-        stack: &mut Vec<Node>,
-    ) {
-        visited.insert(node_name.to_string());
-
-        if let Some(node_info) = self.nodes.get(node_name) {
-            for child_name in &node_info.children {
-                if !visited.contains(child_name) {
-                    self.topological_sort_util(child_name, visited, stack);
-                }
-            }
-            stack.insert(0, node_info.node.clone());
-        }
-    }
-
     /// Topological sort of the graph.
     ///
     /// The topological sort is a linear ordering of the nodes such that
@@ -85,19 +66,35 @@ impl Graph {
     /// ```
     ///
     /// The topological sort of this graph can be `[A, B, C, D]` or `[A, C, B, D]`
-    fn topological_sort(&self) -> Vec<Node> {
+    fn topological_sort(&mut self) {
         let mut visited = HashSet::new();
         let mut stack = vec![];
 
-        for (name, info) in &self.nodes {
+        for (name, info) in self.nodes.iter() {
             if (info.parents.is_empty() || self.is_input_node(&info.node))
                 && !visited.contains(name)
             {
-                self.topological_sort_util(name, &mut visited, &mut stack);
+                self.visit(name, &mut visited, &mut stack);
             }
         }
 
-        stack
+        self.sorted_nodes = stack
+    }
+
+    /// Check if a node has been visited.
+    ///
+    /// If not, we visit the children of the node recursively and add them to the stack.
+    fn visit(&self, node_name: &str, visited: &mut HashSet<String>, stack: &mut Vec<Node>) {
+        visited.insert(node_name.to_string());
+
+        if let Some(node_info) = self.nodes.get(node_name) {
+            for child_name in node_info.children.iter() {
+                if !visited.contains(child_name) {
+                    self.visit(child_name, visited, stack);
+                }
+            }
+            stack.insert(0, node_info.node.clone());
+        }
     }
 }
 
@@ -150,7 +147,7 @@ impl TryFrom<&GraphProto> for Graph {
             }
         }
 
-        graph.sorted_nodes = graph.topological_sort();
+        graph.topological_sort();
 
         Ok(graph)
     }
@@ -215,7 +212,7 @@ mod tests {
             }
         }
 
-        graph.sorted_nodes = graph.topological_sort();
+        graph.topological_sort();
         graph
     }
 
