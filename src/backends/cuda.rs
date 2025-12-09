@@ -46,6 +46,8 @@ fn execute_elementwise_op(
             .launch(config)?;
     }
 
+    stream.synchronize().unwrap();
+
     Ok(CudaStorage {
         context: ctx,
         buffer: out_device,
@@ -198,6 +200,42 @@ impl Backend<f32> for Cuda {
             buffer: c,
         }
     }
+
+    fn dot(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
+        let ctx = lhs.context.clone();
+        let stream = ctx.default_stream();
+
+        let func = compile_kernel(include_str!("./kernels/dot.cu"), "dot", &ctx).unwrap();
+
+        let mut result = stream.alloc_zeros::<f32>(1).unwrap();
+
+        let block_size = 256;
+        let grid_size = size.div_ceil(block_size);
+
+        let config = LaunchConfig {
+            grid_dim: (grid_size as u32, 1, 1),
+            block_dim: (block_size as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            stream
+                .launch_builder(&func)
+                .arg(&lhs.buffer)
+                .arg(&rhs.buffer)
+                .arg(&mut result)
+                .arg(&size)
+                .launch(config)
+                .unwrap();
+        }
+
+        stream.synchronize().unwrap();
+
+        CudaStorage {
+            context: ctx,
+            buffer: result,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -239,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_backend_relu_cuda() {
-        let input = vec![-1.0f32, -2.0, 3.0, 4.0];
+        let input = vec![-1.0, -2.0, 3.0, 4.0];
         let s_input = Cuda::init(&input).unwrap();
         let s_out = Cuda::relu(&s_input, input.len());
         let result = Cuda::copy_to_host(&s_out).unwrap();
@@ -249,8 +287,8 @@ mod tests {
     #[test]
     fn test_backend_gemm_cuda_2x2() {
         // A = [1 2; 3 4], B = [5 6; 7 8]
-        let lhs = vec![1.0f32, 2.0, 3.0, 4.0];
-        let rhs = vec![5.0f32, 6.0, 7.0, 8.0];
+        let lhs = vec![1.0, 2.0, 3.0, 4.0];
+        let rhs = vec![5.0, 6.0, 7.0, 8.0];
         let m = 2;
         let k = 2;
         let n = 2;
@@ -262,5 +300,17 @@ mod tests {
 
         let result = Cuda::copy_to_host(&s_out).unwrap();
         assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
+    }
+
+    #[test]
+    fn test_backend_dot_cuda() {
+        let lhs = vec![1.0, 2.0, 3.0, 4.0];
+        let rhs = vec![5.0, 6.0, 7.0, 8.0];
+        let size = lhs.len();
+        let s_lhs = Cuda::init(&lhs).unwrap();
+        let s_rhs = Cuda::init(&rhs).unwrap();
+        let s_out = Cuda::dot(&s_lhs, &s_rhs, size);
+        let result = Cuda::copy_to_host(&s_out).unwrap();
+        assert_eq!(result, vec![70.0]);
     }
 }

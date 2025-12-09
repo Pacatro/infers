@@ -167,4 +167,6 @@ pub trait Backend<T>: Clone + Debug + Copy {
         n: usize,
         k: usize,
     ) -> Self::Storage;
+
+    fn dot(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
 }

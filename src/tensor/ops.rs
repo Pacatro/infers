@@ -27,13 +27,12 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::add(&self.storage, &rhs.storage, self.len);
-
+        let storage = B::add(&self.storage, &rhs.storage, self.len);
         let shape = self.shape();
         let strides = &self.strides;
 
         Self {
-            storage: new_storage,
+            storage,
             shape: shape.to_vec(),
             strides: strides.to_vec(),
             len: self.len,
@@ -58,13 +57,12 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::sub(&self.storage, &rhs.storage, self.len);
-
+        let storage = B::sub(&self.storage, &rhs.storage, self.len);
         let shape = self.shape();
         let strides = &self.strides;
 
         Self {
-            storage: new_storage,
+            storage,
             shape: shape.to_vec(),
             strides: strides.to_vec(),
             len: self.len,
@@ -89,15 +87,36 @@ where
             "The two tensors must be on the same device."
         );
 
-        let new_storage = B::mul(&self.storage, &rhs.storage, self.len);
-
+        let storage = B::mul(&self.storage, &rhs.storage, self.len);
         let shape = self.shape();
         let strides = &self.strides;
 
         Self {
-            storage: new_storage,
+            storage,
             shape: shape.to_vec(),
             strides: strides.to_vec(),
+            len: self.len,
+            _backend: PhantomData,
+        }
+    }
+
+    pub fn dot(&self, rhs: &Self) -> Self {
+        assert_eq!(self.shape, rhs.shape);
+        assert_eq!(
+            self.device(),
+            rhs.device(),
+            "The two tensors must be on the same device."
+        );
+
+        let storage = B::dot(&self.storage, &rhs.storage, self.len);
+
+        let shape = vec![self.len];
+        let strides = vec![1];
+
+        Self {
+            storage,
+            shape,
+            strides,
             len: self.len,
             _backend: PhantomData,
         }
@@ -143,6 +162,11 @@ where
     ///
     /// A new `Tensor` containing the result of the matrix multiplication.
     pub fn matmul(&self, rhs: &Self) -> Self {
+        // If both tensors are 1D, perform a dot product
+        if self.ndims() == 1 && rhs.ndims() == 1 {
+            return self.dot(rhs);
+        }
+
         // TODO: Use batching to handle higher-dimensional tensors
 
         let m = self.shape[0];
@@ -236,6 +260,16 @@ mod test {
     }
 
     #[test]
+    fn test_tensor_dot_cpu() {
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[4]);
+        let t2 = Tensor::new(&[1., 2., 3., 4.], &[4]);
+        let t3 = t1.dot(&t2);
+        assert_eq!(t3.data().unwrap(), [30.]);
+        assert_eq!(t3.device(), Device::Cpu);
+        assert_eq!(t3.shape, &[4]);
+    }
+
+    #[test]
     fn test_tensor_relu_cpu() {
         let t = Tensor::new(&[-1., -2., 3., 4.], &[2, 2]);
         let t = t.relu();
@@ -276,10 +310,21 @@ mod test {
 
         assert_eq!(
             t3.data().unwrap(),
-            vec![62., 68., 74., 80., 143., 158., 173., 188.]
+            [62., 68., 74., 80., 143., 158., 173., 188.]
         );
         assert_eq!(t3.device(), Device::Cpu);
         assert_eq!(t3.shape, &[2, 4]);
+    }
+
+    #[test]
+    fn test_tensor_matmul_1d_cpu() {
+        let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+        let t2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
+        let t3 = t1.matmul(&t2);
+
+        assert_eq!(t3.data().unwrap(), [30.]);
+        assert_eq!(t3.device(), Device::Cpu);
+        assert_eq!(t3.shape, &[4]);
     }
 
     #[test]
@@ -342,6 +387,17 @@ mod test {
         let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t3 = &t1 * &t2;
         assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_dot_cuda() {
+        let t1 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[4]).unwrap();
+        let t2 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[4]).unwrap();
+        let t3 = t1.dot(&t2);
+        assert_eq!(t3.data().unwrap(), [30.]);
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, &[4]);
     }
 
     #[test]
@@ -419,5 +475,17 @@ mod test {
             vec![19., 22., 43., 50., 111., 122., 151., 166.]
         );
         assert_eq!(t3.device(), Device::Cpu);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_matmul_1d_cuda() {
+        let t1 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let t2 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
+        let t3 = t1.matmul(&t2);
+
+        assert_eq!(t3.data().unwrap(), [30.]);
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, [4]);
     }
 }

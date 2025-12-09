@@ -1,6 +1,6 @@
 use num_traits::{FromPrimitive, Num};
 use rayon::prelude::*;
-use std::{fmt::Debug, ops::AddAssign};
+use std::{fmt::Debug, iter::Sum, ops::AddAssign};
 
 use crate::{
     InfersResult,
@@ -16,7 +16,7 @@ pub struct Cpu;
 
 impl<T> Backend<T> for Cpu
 where
-    T: Num + Clone + Copy + Debug + Send + Sync + PartialOrd + FromPrimitive + AddAssign,
+    T: Num + Clone + Copy + Debug + Send + Sync + PartialOrd + FromPrimitive + AddAssign + Sum,
 {
     type Storage = Vec<T>;
 
@@ -99,6 +99,15 @@ where
 
         c
     }
+
+    fn dot(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
+        let sum: T = lhs
+            .par_iter()
+            .zip(rhs.par_iter())
+            .map(|(&a, &b)| a * b)
+            .sum();
+        vec![sum]
+    }
 }
 
 #[cfg(test)]
@@ -154,5 +163,13 @@ mod tests {
         let rhs = vec![5., 6., 7., 8.];
         let result = Cpu::gemm(&lhs, &rhs, 1., 0., 2, 2, 2);
         assert_eq!(result, vec![19., 22., 43., 50.]);
+    }
+
+    #[test]
+    fn test_backend_dot_cpu() {
+        let lhs = vec![1., 2., 3., 4.];
+        let rhs = vec![5., 6., 7., 8.];
+        let result = Cpu::dot(&lhs, &rhs, 4);
+        assert_eq!(result, vec![70.]);
     }
 }
