@@ -101,7 +101,7 @@ where
     }
 
     fn dot(lhs: &Self::Storage, rhs: &Self::Storage, _size: usize) -> Self::Storage {
-        let sum: T = lhs
+        let sum = lhs
             .par_iter()
             .zip(rhs.par_iter())
             .map(|(&a, &b)| a * b)

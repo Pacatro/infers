@@ -153,11 +153,43 @@ pub trait Backend<T>: Clone + Debug + Copy {
     ///
     /// # Returns
     ///
-    /// A new `Self::Storage` containing the result of `lhs + rhs`.
+    /// A new `Self::Storage` containing the result of `lhs * rhs`.
     fn mul(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
 
+    /// Applies the ReLU (Rectified Linear Unit) activation function to the input storage.
+    ///
+    /// ReLU sets all negative values to zero and leaves positive values unchanged.
+    /// This operation should be optimized to run entirely on the target device.
+    ///
+    /// # Arguments
+    ///
+    /// * `input`: The input storage to apply ReLU to.
+    /// * `size`: The number of elements in the storage.
+    ///
+    /// # Returns
+    ///
+    /// A new `Self::Storage` containing the result of applying ReLU to `input`.
     fn relu(input: &Self::Storage, size: usize) -> Self::Storage;
 
+    /// Performs a General Matrix Multiply (GEMM) operation.
+    ///
+    /// Computes the matrix multiplication: C = alpha * A * B + beta * C
+    /// where A is an m×k matrix, B is a k×n matrix, and C is an m×n matrix.
+    /// This operation should be optimized to run entirely on the target device.
+    ///
+    /// # Arguments
+    ///
+    /// * `lhs`: The left-hand side matrix (A) with dimensions m×k.
+    /// * `rhs`: The right-hand side matrix (B) with dimensions k×n.
+    /// * `alpha`: Scalar multiplier for the matrix product.
+    /// * `beta`: Scalar multiplier for the existing matrix C.
+    /// * `m`: Number of rows in matrices A and C.
+    /// * `n`: Number of columns in matrices B and C.
+    /// * `k`: Number of columns in matrix A and rows in matrix B.
+    ///
+    /// # Returns
+    ///
+    /// A new `Self::Storage` containing the result matrix C.
     fn gemm(
         lhs: &Self::Storage,
         rhs: &Self::Storage,
@@ -168,5 +200,19 @@ pub trait Backend<T>: Clone + Debug + Copy {
         k: usize,
     ) -> Self::Storage;
 
+    /// Computes the dot product of two storage blocks.
+    ///
+    /// Calculates the sum of element-wise products: Σ(lhs[i] * rhs[i])
+    /// This operation should be optimized to run entirely on the target device.
+    ///
+    /// # Arguments
+    ///
+    /// * `lhs`: The left-hand side operand storage.
+    /// * `rhs`: The right-hand side operand storage.
+    /// * `size`: The number of elements in the storage.
+    ///
+    /// # Returns
+    ///
+    /// A new `Self::Storage` containing the scalar dot product result.
     fn dot(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
 }

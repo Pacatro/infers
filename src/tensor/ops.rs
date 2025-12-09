@@ -118,6 +118,14 @@ where
         }
     }
 
+    /// Computes the dot product of two tensors.
+    ///
+    /// The operation is delegated to the backend's efficient `dot` method.
+    /// Returns a new tensor containing the scalar result.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensors have different shapes or reside on different devices.
     pub fn dot(&self, rhs: &Self) -> Self {
         assert_eq!(self.ndims(), self.ndims());
         assert_eq!(
@@ -175,6 +183,8 @@ where
     /// # Arguments
     ///
     /// * `rhs`: The right-hand side tensor.
+    /// * `alpha`: Optional scalar multiplier for the matrix product. If not provided, defaults to 1.
+    /// * `beta`: Optional scalar multiplier for the existing tensor. If not provided, defaults to 0.
     ///
     /// # Returns
     ///
@@ -223,6 +233,18 @@ where
         }
     }
 
+    /// Transposes a 2D tensor.
+    ///
+    /// Swaps the dimensions of a 2D tensor, effectively rotating it.
+    /// The underlying storage is not copied, only the shape and strides are updated.
+    ///
+    /// # Returns
+    ///
+    /// A new `Tensor` with transposed dimensions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensor is not 2-dimensional.
     pub fn t(&self) -> Self {
         assert_eq!(self.ndims(), 2, "Transpose only works for 2D tensors");
 
