@@ -19,7 +19,23 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn add(&self, rhs: &Self) -> Self {
-        assert_eq!(self.shape, rhs.shape);
+        // Format 1D tensors shape as column vectors [30] -> [1, 30]
+        let self_shape = if self.ndims() == 1 {
+            &[1, self.shape[0]]
+        } else {
+            self.shape.as_slice()
+        };
+
+        let rhs_shape = if rhs.ndims() == 1 {
+            &[1, rhs.shape[0]]
+        } else {
+            rhs.shape.as_slice()
+        };
+
+        let self_ndims = self_shape.len();
+        let rhs_ndims = rhs_shape.len();
+
+        assert_eq!(self_ndims, rhs_ndims);
 
         assert_eq!(
             self.device(),
@@ -27,15 +43,17 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::add(&self.storage, &rhs.storage, self.len);
-        let shape = self.shape();
-        let strides = &self.strides;
+        let len = self_shape.iter().product();
+
+        let storage = B::add(&self.storage, &rhs.storage, len);
+        let shape = self_shape;
+        let strides = compute_strides(shape);
 
         Self {
             storage,
             shape: shape.to_vec(),
             strides: strides.to_vec(),
-            len: self.len,
+            len,
             _backend: PhantomData,
         }
     }
@@ -49,7 +67,7 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn sub(&self, rhs: &Self) -> Self {
-        assert_eq!(self.shape, rhs.shape);
+        assert_eq!(self.ndims(), self.ndims());
 
         assert_eq!(
             self.device(),
@@ -79,7 +97,7 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn mul(&self, rhs: &Self) -> Self {
-        assert_eq!(self.shape, rhs.shape);
+        assert_eq!(self.ndims(), self.ndims());
 
         assert_eq!(
             self.device(),
@@ -101,7 +119,7 @@ where
     }
 
     pub fn dot(&self, rhs: &Self) -> Self {
-        assert_eq!(self.shape, rhs.shape);
+        assert_eq!(self.ndims(), self.ndims());
         assert_eq!(
             self.device(),
             rhs.device(),
@@ -167,14 +185,25 @@ where
             return self.dot(rhs);
         }
 
-        // TODO: Use batching to handle higher-dimensional tensors
+        // Format 1D tensors shape as column vectors [30] -> [1, 30]
+        let self_shape = if self.ndims() == 1 {
+            &[1, self.shape[0]]
+        } else {
+            self.shape.as_slice()
+        };
 
-        let m = self.shape[0];
-        let k = self.shape[1];
-        let n = rhs.shape[1];
+        let rhs_shape = if rhs.ndims() == 1 {
+            &[1, rhs.shape[0]]
+        } else {
+            rhs.shape.as_slice()
+        };
+
+        let m = self_shape[0];
+        let k = self_shape[1];
+        let n = rhs_shape[1];
 
         assert_eq!(
-            k, rhs.shape[0],
+            k, rhs_shape[0],
             "mat1 and mat2 shapes cannot be multiplied ({}x{} and {}x{})",
             m, k, k, n
         );
@@ -188,6 +217,18 @@ where
             shape,
             strides,
             len: m * n,
+            _backend: PhantomData,
+        }
+    }
+
+    pub fn t(&self) -> Self {
+        assert_eq!(self.ndims(), 2, "Transpose only works for 2D tensors");
+
+        Self {
+            storage: self.storage.clone(),
+            shape: vec![self.shape[1], self.shape[0]],
+            strides: vec![self.strides[1], self.strides[0]],
+            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -352,12 +393,20 @@ mod test {
     }
 
     #[test]
+    fn test_tensor_transpose() {
+        let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[3, 2]);
+        let t = t.t();
+        assert_eq!(t.shape, &[2, 3]);
+        assert_eq!(t.strides, &[1, 2]);
+    }
+
+    #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_add_cuda() {
         use crate::backends::Device;
 
-        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
+        let t1 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t3 = &t1 + &t2;
 
         assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
@@ -370,8 +419,8 @@ mod test {
     fn test_tensor_sub_cuda() {
         use crate::backends::Device;
 
-        let t1 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        let t1 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
+        let t2 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
 
         let t3 = &t1 - &t2;
 
