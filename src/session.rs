@@ -57,7 +57,7 @@ where
             if !init.float_data.is_empty() {
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::<B, f32>::from_data(&init.float_data, dims.as_slice())?,
+                    Tensor::<B>::from_data(&init.float_data, dims.as_slice())?,
                 );
             } else if let Some(data) = init.raw_data.as_ref() {
                 // The raw data is a sequence of bytes, each representing a float.
@@ -85,7 +85,7 @@ where
 
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::<B, f32>::from_data(&data, shape)?,
+                    Tensor::<B>::from_data(&data, shape)?,
                 );
             }
         }
@@ -93,7 +93,7 @@ where
         Ok(weights)
     }
 
-    pub fn run(&mut self, input: Tensor<B, f32>) -> InfersResult<()> {
+    pub fn run(&mut self, input: Tensor<B>) -> InfersResult<Tensor<B>> {
         self.weights.insert(self.graph.inputs[0].to_string(), input);
 
         for node in self.graph.iter() {
@@ -107,7 +107,11 @@ where
             self.weights.insert(node.output[0].to_string(), output);
         }
 
-        Ok(())
+        let Some(output) = self.weights.get(&self.graph.outputs[0]) else {
+            return Err("Output tensor is empty".into());
+        };
+
+        Ok(output.clone())
     }
 
     fn evaluate_node(
@@ -135,13 +139,14 @@ where
                 let rhs = &inputs[1];
                 let bias = &inputs[2];
 
-                Ok(lhs.matmul(rhs).add(bias))
+                Ok(lhs.matmul(&rhs.t()).add(bias))
             }
             OpType::Flatten => {
-                if inputs.len() != 1 {
+                if inputs.is_empty() {
                     return Err("Invalid number of inputs for Flatten operation".into());
                 }
 
+                // Assume (for now) that the input is a single tensor
                 Ok(inputs[0].flatten())
             }
             OpType::Relu => {
