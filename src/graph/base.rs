@@ -53,6 +53,52 @@ impl Graph {
         self.sorted_nodes.iter_mut()
     }
 
+    fn compute_edges(&mut self) {
+        // TODO: AVOID TO USE .clone() everywhere, maybe we can use Rc<RefCell<T>> instead?
+        // Collect all node names first to avoid borrowing issues
+        let node_names: Vec<String> = self.nodes.keys().cloned().collect();
+
+        // Build tensor to producer mapping
+        let mut tensor_to_producer: HashMap<String, String> = HashMap::new();
+        for name in &node_names {
+            if let Some(info) = self.nodes.get(name) {
+                for out in &info.node.output {
+                    tensor_to_producer.insert(out.clone(), name.clone());
+                }
+            }
+        }
+
+        // Clear existing edges
+        for name in &node_names {
+            if let Some(info) = self.nodes.get_mut(name) {
+                info.children.clear();
+                info.parents.clear();
+            }
+        }
+
+        // Identify connections
+        let mut updates: Vec<(String, String)> = Vec::new();
+        for name in &node_names {
+            if let Some(info) = self.nodes.get(name) {
+                for input_tensor in &info.node.input {
+                    if let Some(parent_name) = tensor_to_producer.get(input_tensor) {
+                        updates.push((parent_name.clone(), name.clone()));
+                    }
+                }
+            }
+        }
+
+        // Apply connections
+        for (parent, child) in updates {
+            if let Some(p_info) = self.nodes.get_mut(&parent) {
+                p_info.children.push(child.clone());
+            }
+            if let Some(c_info) = self.nodes.get_mut(&child) {
+                c_info.parents.push(parent.clone());
+            }
+        }
+    }
+
     /// Checks if a node is an input node.
     fn is_input_node(&self, node: &Node) -> bool {
         node.input
@@ -132,7 +178,7 @@ impl TryFrom<&GraphProto> for Graph {
     fn try_from(graph_proto: &GraphProto) -> InfersResult<Self> {
         let mut graph = Self::default();
 
-        // Load inputs and outputs
+        // Load global inputs and outputs
         for input in graph_proto.input.iter() {
             graph.inputs.push(input.name().to_string());
         }
@@ -141,40 +187,13 @@ impl TryFrom<&GraphProto> for Graph {
             graph.outputs.push(output.name().to_string());
         }
 
-        // Load nodes to graph
-        let mut tensor_to_producer = HashMap::<String, String>::new();
-
+        // Load nodes
         for node_proto in graph_proto.node.iter() {
             let node = Node::try_from(node_proto)?;
-
-            for output in node.output.iter() {
-                tensor_to_producer.insert(output.to_string(), node.name.to_string());
-            }
-
             graph.add_node(&node);
         }
 
-        // Connect edges
-        let mut updates: Vec<(String, String)> = vec![];
-
-        for (child_name, info) in graph.nodes.iter_mut() {
-            for input_name in &info.node.input {
-                if let Some(producer_name) = tensor_to_producer.get(input_name) {
-                    updates.push((producer_name.to_string(), child_name.to_string()));
-                }
-            }
-        }
-
-        for (parent, child) in updates {
-            if let Some(p_info) = graph.nodes.get_mut(&parent) {
-                p_info.children.push(child.clone());
-            }
-
-            if let Some(c_info) = graph.nodes.get_mut(&child) {
-                c_info.parents.push(parent);
-            }
-        }
-
+        graph.compute_edges();
         graph.topological_sort();
 
         Ok(graph)

@@ -74,18 +74,18 @@ where
                 let expected_len: usize = dims.iter().product();
                 let data = data?;
 
-                // FIXME: I don't know if this is correct, the problema is that for some reason,
-                // the graph proto form onnx has two global inputs (x and val_3)
+                // FIXME: I don't know if this is correct, the problem is that for some reason,
+                // the graph proto from onnx has two global inputs (x and val_3)
                 // maybe the second input refers to the validation input (i don't know)
                 let shape = if expected_len == data.len() {
-                    dims
+                    dims.as_slice()
                 } else {
-                    vec![data.len()]
+                    &[data.len()]
                 };
 
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::<B, f32>::from_data(&data, shape.as_slice())?,
+                    Tensor::<B, f32>::from_data(&data, shape)?,
                 );
             }
         }
@@ -95,6 +95,7 @@ where
 
     pub fn run(&mut self, input: Tensor<B, f32>) -> InfersResult<()> {
         self.weights.insert(self.graph.inputs[0].to_string(), input);
+
         for node in self.graph.iter() {
             let inputs = self.prepare_inputs(node);
             let output = self.evaluate_node(node, inputs)?;
