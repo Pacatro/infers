@@ -41,6 +41,11 @@ impl Node {
 impl TryFrom<&NodeProto> for Node {
     type Error = Box<dyn std::error::Error>;
 
+    /// Creates a new `Node` from the given `NodeProto`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `NodeProto` is invalid.
     fn try_from(node_proto: &NodeProto) -> InfersResult<Node> {
         let name = node_proto.name().to_string();
         let op_type = OpType::from_str(node_proto.op_type())?;
