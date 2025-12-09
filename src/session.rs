@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs::File, io::Read};
 use crate::{
     InfersResult, Tensor,
     backends::{Backend, Device},
-    graph::{Graph, Node, OpType},
+    graph::{AttributeValue, Graph, Node, OpType},
     onnx::{ModelProto, TensorProto},
 };
 
@@ -48,6 +48,27 @@ where
         })
     }
 
+    pub fn run(&mut self, input: Tensor<B>) -> InfersResult<Tensor<B>> {
+        self.weights.insert(self.graph.inputs[0].to_string(), input);
+
+        for node in self.graph.iter() {
+            let inputs = self.prepare_inputs(node);
+            let output = self.evaluate_node(node, inputs)?;
+
+            if output.is_empty() {
+                return Err("Output tensor is empty".into());
+            }
+
+            self.weights.insert(node.output[0].to_string(), output);
+        }
+
+        let Some(output) = self.weights.get(&self.graph.outputs[0]) else {
+            return Err("Output tensor is empty".into());
+        };
+
+        Ok(output.clone())
+    }
+
     fn load_weights(initializer: &[TensorProto]) -> InfersResult<HashMap<String, Tensor<B, f32>>> {
         let mut weights = HashMap::new();
 
@@ -74,9 +95,6 @@ where
                 let expected_len: usize = dims.iter().product();
                 let data = data?;
 
-                // FIXME: I don't know if this is correct, the problem is that for some reason,
-                // the graph proto from onnx has two global inputs (x and val_3)
-                // maybe the second input refers to the validation input (i don't know)
                 let shape = if expected_len == data.len() {
                     dims.as_slice()
                 } else {
@@ -93,32 +111,12 @@ where
         Ok(weights)
     }
 
-    pub fn run(&mut self, input: Tensor<B>) -> InfersResult<Tensor<B>> {
-        self.weights.insert(self.graph.inputs[0].to_string(), input);
-
-        for node in self.graph.iter() {
-            let inputs = self.prepare_inputs(node);
-            let output = self.evaluate_node(node, inputs)?;
-
-            if output.is_empty() {
-                return Err("Output tensor is empty".into());
-            }
-
-            self.weights.insert(node.output[0].to_string(), output);
-        }
-
-        let Some(output) = self.weights.get(&self.graph.outputs[0]) else {
-            return Err("Output tensor is empty".into());
-        };
-
-        Ok(output.clone())
-    }
-
     fn evaluate_node(
         &self,
         node: &Node,
         inputs: Vec<Tensor<B, f32>>,
     ) -> InfersResult<Tensor<B, f32>> {
+        // TODO: CHECK INFO IN NODES ATTRIBUTES TO CHECK IF THE TENSOR MUST BE TRANSPOSED
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
@@ -135,11 +133,38 @@ where
                     return Err("Invalid number of inputs for Gemm operation".into());
                 }
 
+                // Helper that checks if an attribute with the given name is set to 1
+                let is_transposed = |attr_name: &str| -> bool {
+                    matches!(node.get_attribute(attr_name), Some(AttributeValue::Int64(x)) if x != 0)
+                };
+
+                // Get the alpha and beta attributes,
+                let alpha = match node.get_attribute("alpha") {
+                    Some(AttributeValue::Float(alpha)) => Some(alpha),
+                    _ => None,
+                };
+
+                let beta = match node.get_attribute("beta") {
+                    Some(AttributeValue::Float(beta)) => Some(beta),
+                    _ => None,
+                };
+
+                let trans_a = is_transposed("transA");
+                let trans_b = is_transposed("transB");
+
                 let lhs = &inputs[0];
                 let rhs = &inputs[1];
                 let bias = &inputs[2];
 
-                Ok(lhs.matmul(&rhs.t()).add(bias))
+                let mm = match (trans_a, trans_b) {
+                    (false, false) => lhs.gemm(rhs, alpha, beta),
+                    (false, true) => lhs.gemm(&rhs.t(), alpha, beta),
+                    (true, false) => lhs.t().gemm(rhs, alpha, beta),
+                    (true, true) => lhs.t().gemm(&rhs.t(), alpha, beta),
+                };
+
+                // We finnaly add the bias
+                Ok(mm.add(bias))
             }
             OpType::Flatten => {
                 if inputs.is_empty() {

@@ -1,6 +1,6 @@
 use crate::{
     InfersResult,
-    graph::{Attribute, OpType},
+    graph::{Attribute, AttributeValue, OpType},
     onnx::NodeProto,
 };
 use std::{collections::HashMap, str::FromStr};
@@ -33,8 +33,8 @@ impl Node {
     }
 
     /// Returns the value of the attribute with the given name, if it exists.
-    pub fn get_attribute(&self, name: &str) -> Option<&Attribute> {
-        self.attributes.get(name)
+    pub fn get_attribute(&self, name: &str) -> Option<AttributeValue> {
+        self.attributes.get(name).map(|attr| attr.value.clone())
     }
 }
 
@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(node.output, vec!["output".to_string()]);
         assert_eq!(node.attributes.len(), 1);
         assert_eq!(
-            node.get_attribute("test").unwrap().value,
+            node.get_attribute("test").unwrap(),
             AttributeValue::Float(1.0)
         );
     }

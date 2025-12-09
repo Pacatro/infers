@@ -170,7 +170,7 @@ where
         }
     }
 
-    /// Performs matrix multiplication between two tensors.
+    /// Performs a general matrix multiplication (GEMM) between two tensors.
     ///
     /// # Arguments
     ///
@@ -179,7 +179,7 @@ where
     /// # Returns
     ///
     /// A new `Tensor` containing the result of the matrix multiplication.
-    pub fn matmul(&self, rhs: &Self) -> Self {
+    pub fn gemm(&self, rhs: &Self, alpha: Option<T>, beta: Option<T>) -> Self {
         // If both tensors are 1D, perform a dot product
         if self.ndims() == 1 && rhs.ndims() == 1 {
             return self.dot(rhs);
@@ -208,7 +208,9 @@ where
             m, k, k, n
         );
 
-        let new_storage = B::gemm(&self.storage, &rhs.storage, T::one(), T::zero(), m, n, k);
+        let alpha = alpha.unwrap_or(T::one());
+        let beta = beta.unwrap_or(T::zero());
+        let new_storage = B::gemm(&self.storage, &rhs.storage, alpha, beta, m, n, k);
         let shape = vec![m, n];
         let strides = compute_strides(&shape);
 
@@ -330,10 +332,10 @@ mod test {
     }
 
     #[test]
-    fn test_tensor_matmul_same_shapes_cpu() {
+    fn test_tensor_gemm_same_shapes_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
         assert_eq!(t3.device(), Device::Cpu);
@@ -341,13 +343,13 @@ mod test {
     }
 
     #[test]
-    fn test_tensor_matmul_diff_shapes_cpu() {
+    fn test_tensor_gemm_diff_shapes_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
         let t2 = Tensor::new(
             &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
             &[3, 4],
         );
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(
             t3.data().unwrap(),
@@ -358,10 +360,10 @@ mod test {
     }
 
     #[test]
-    fn test_tensor_matmul_1d_cpu() {
+    fn test_tensor_gemm_1d_cpu() {
         let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
         let t2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.data().unwrap(), [30.]);
         assert_eq!(t3.device(), Device::Cpu);
@@ -370,19 +372,19 @@ mod test {
 
     #[test]
     #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
-    fn test_tensor_matmul_bad_shapes_cpu() {
+    fn test_tensor_gemm_bad_shapes_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
         let t2 = Tensor::new(&[5., 6.], &[1, 2]);
-        let _ = t1.matmul(&t2);
+        let _ = t1.gemm(&t2, None, None);
     }
 
     #[test]
     #[ignore = "Not implemented"]
-    fn test_tensor_matmul_ndims_cpu() {
+    fn test_tensor_gemm_ndims_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
 
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.shape, &[2, 2, 2]);
         assert_eq!(
@@ -472,10 +474,10 @@ mod test {
 
     #[test]
     #[cfg(feature = "cuda")]
-    fn test_tensor_matmul_same_shapes_cuda() {
+    fn test_tensor_gemm_same_shapes_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
         assert_eq!(t3.device(), Device::Cuda);
@@ -484,14 +486,14 @@ mod test {
 
     #[test]
     #[cfg(feature = "cuda")]
-    fn test_tensor_matmul_diff_shapes_cuda() {
+    fn test_tensor_gemm_diff_shapes_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4., 5., 6.], &[2, 3]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(
             &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
             &[3, 4],
         )
         .unwrap();
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(
             t3.data().unwrap(),
@@ -504,19 +506,19 @@ mod test {
     #[test]
     #[cfg(feature = "cuda")]
     #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
-    fn test_tensor_matmul_bad_shapes_cuda() {
+    fn test_tensor_gemm_bad_shapes_cuda() {
         let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6.], &[1, 2]).unwrap();
-        let _ = t1.matmul(&t2);
+        let _ = t1.gemm(&t2, None, None);
     }
 
     #[test]
     #[ignore = "Not implemented"]
-    fn test_tensor_matmul_ndims_cuda() {
+    fn test_tensor_gemm_ndims_cuda() {
         let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
         let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
 
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.shape, &[2, 2, 2]);
         assert_eq!(
@@ -528,10 +530,10 @@ mod test {
 
     #[test]
     #[cfg(feature = "cuda")]
-    fn test_tensor_matmul_1d_cuda() {
+    fn test_tensor_gemm_1d_cuda() {
         let t1 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
         let t2 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let t3 = t1.matmul(&t2);
+        let t3 = t1.gemm(&t2, None, None);
 
         assert_eq!(t3.data().unwrap(), [30.]);
         assert_eq!(t3.device(), Device::Cuda);
