@@ -18,7 +18,7 @@ fn bench_cpu_sizes(c: &mut Criterion) {
 
         group.bench_function(&bench_id, |b| {
             b.iter(|| {
-                let r = t1.matmul(&t2);
+                let r = t1.gemm(&t2, None, None);
                 black_box(r);
             });
         });
@@ -39,7 +39,7 @@ fn bench_cuda_sizes(c: &mut Criterion) {
 
         group.bench_function(&bench_id, |b| {
             b.iter(|| {
-                let r = t1.matmul(&t2);
+                let r = t1.gemm(&t2, None, None);
                 black_box(r);
             });
         });
