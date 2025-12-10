@@ -2,6 +2,32 @@ use std::fmt::{Debug, Display};
 
 use crate::InfersResult;
 
+/// Parameters for General Matrix Multiply (GEMM) operations.
+///
+/// This struct encapsulates all the parameters needed for a GEMM operation,
+/// making the function signature cleaner and more maintainable.
+#[derive(Debug, Clone)]
+pub struct GemmParams<'a, T, S> {
+    /// The left-hand side matrix (A) with dimensions m×k.
+    pub lhs: &'a S,
+    /// The right-hand side matrix (B) with dimensions k×n.
+    pub rhs: &'a S,
+    /// Strides for the left-hand side matrix.
+    pub lhs_strides: Vec<usize>,
+    /// Strides for the right-hand side matrix.
+    pub rhs_strides: Vec<usize>,
+    /// Scalar multiplier for the matrix product.
+    pub alpha: T,
+    /// Scalar multiplier for the existing matrix C.
+    pub beta: T,
+    /// Number of rows in matrices A and C.
+    pub m: usize,
+    /// Number of columns in matrices B and C.
+    pub n: usize,
+    /// Number of columns in matrix A and rows in matrix B.
+    pub k: usize,
+}
+
 /// Represents the physical device where the computation and storage will occur.
 ///
 /// This enum allows the system to differentiate between standard CPU processing
@@ -36,7 +62,7 @@ impl Display for Device {
 /// The generic parameter `T` represents the element type stored by the backend
 /// (e.g., f32, i32).
 #[allow(dead_code)]
-pub trait Backend<T>: Clone + Debug + Copy {
+pub trait Backend<T = f32>: Clone + Debug + Copy {
     /// The device-specific memory storage type.
     ///
     /// This might be a `Vec<T>` for the CPU backend, or a GPU buffer type
@@ -179,26 +205,12 @@ pub trait Backend<T>: Clone + Debug + Copy {
     ///
     /// # Arguments
     ///
-    /// * `lhs`: The left-hand side matrix (A) with dimensions m×k.
-    /// * `rhs`: The right-hand side matrix (B) with dimensions k×n.
-    /// * `alpha`: Scalar multiplier for the matrix product.
-    /// * `beta`: Scalar multiplier for the existing matrix C.
-    /// * `m`: Number of rows in matrices A and C.
-    /// * `n`: Number of columns in matrices B and C.
-    /// * `k`: Number of columns in matrix A and rows in matrix B.
+    /// * `params`: A `GemmParams` struct containing all GEMM operation parameters.
     ///
     /// # Returns
     ///
     /// A new `Self::Storage` containing the result matrix C.
-    fn gemm(
-        lhs: &Self::Storage,
-        rhs: &Self::Storage,
-        alpha: T,
-        beta: T,
-        m: usize,
-        n: usize,
-        k: usize,
-    ) -> Self::Storage;
+    fn gemm(params: GemmParams<T, Self::Storage>) -> Self::Storage;
 
     /// Computes the dot product of two storage blocks.
     ///

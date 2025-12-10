@@ -7,7 +7,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     InfersResult,
-    backends::{Backend, Device},
+    backends::{Backend, Device, GemmParams},
 };
 
 /// Compiles a CUDA kernel from a string source.
@@ -153,42 +153,45 @@ impl Backend<f32> for Cuda {
         }
     }
 
-    fn gemm(
-        lhs: &Self::Storage,
-        rhs: &Self::Storage,
-        alpha: f32,
-        beta: f32,
-        m: usize,
-        n: usize,
-        k: usize,
-    ) -> Self::Storage {
-        let ctx = lhs.context.clone();
+    fn gemm(params: GemmParams<f32, Self::Storage>) -> Self::Storage {
+        let ctx = params.lhs.context.clone();
         let stream = ctx.default_stream();
 
         let func = compile_kernel(include_str!("./kernels/gemm.cu"), "gemm", &ctx).unwrap();
 
-        let mut c = stream.alloc_zeros::<f32>(m * n).unwrap();
+        let mut c = stream.alloc_zeros::<f32>(params.m * params.n).unwrap();
+        let c_row_stride = params.n;
+        let c_col_stride = 1;
 
         let block = (16, 16, 1);
-        let grid = (n.div_ceil(block.0), m.div_ceil(block.1), 1);
+        let grid = (params.n.div_ceil(block.0), params.m.div_ceil(block.1), 1);
 
         let config = LaunchConfig {
             grid_dim: (grid.0 as u32, grid.1 as u32, 1),
             block_dim: (block.0 as u32, block.1 as u32, 1),
-            shared_mem_bytes: 0,
+            // TILE_SIZE * (TILE_SIZE + 1) * sizeof(float) * 2 matrices (As and Bs)
+            // TILE_SIZE = 16, float size = 4 bytes
+            // 16 * 17 * 4 * 2 = 2176 bytes
+            shared_mem_bytes: (16 * 17 * 4 * 2),
         };
 
         unsafe {
             stream
                 .launch_builder(&func)
-                .arg(&m)
-                .arg(&n)
-                .arg(&k)
-                .arg(&alpha)
-                .arg(&lhs.buffer)
-                .arg(&rhs.buffer)
-                .arg(&beta)
+                .arg(&params.m)
+                .arg(&params.n)
+                .arg(&params.k)
+                .arg(&params.alpha)
+                .arg(&params.lhs.buffer)
+                .arg(&params.lhs_strides[0])
+                .arg(&params.lhs_strides[1])
+                .arg(&params.rhs.buffer)
+                .arg(&params.rhs_strides[0])
+                .arg(&params.rhs_strides[1])
+                .arg(&params.beta)
                 .arg(&mut c)
+                .arg(&c_row_stride)
+                .arg(&c_col_stride)
                 .launch(config)
                 .unwrap();
         }
@@ -287,16 +290,28 @@ mod tests {
     #[test]
     fn test_backend_gemm_cuda_2x2() {
         // A = [1 2; 3 4], B = [5 6; 7 8]
-        let lhs = vec![1.0, 2.0, 3.0, 4.0];
-        let rhs = vec![5.0, 6.0, 7.0, 8.0];
+        let lhs = [1.0, 2.0, 3.0, 4.0];
+        let rhs = [5.0, 6.0, 7.0, 8.0];
         let m = 2;
         let k = 2;
         let n = 2;
+        let lhs_strides = [2, 1];
+        let rhs_strides = [2, 1];
 
         let s_lhs = Cuda::init(&lhs).unwrap();
         let s_rhs = Cuda::init(&rhs).unwrap();
 
-        let s_out = Cuda::gemm(&s_lhs, &s_rhs, 1.0, 0.0, m, n, k);
+        let s_out = Cuda::gemm(GemmParams {
+            lhs: &s_lhs,
+            rhs: &s_rhs,
+            lhs_strides: lhs_strides.to_vec(),
+            rhs_strides: rhs_strides.to_vec(),
+            alpha: 1.0,
+            beta: 0.0,
+            m,
+            n,
+            k,
+        });
 
         let result = Cuda::copy_to_host(&s_out).unwrap();
         assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);

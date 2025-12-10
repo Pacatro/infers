@@ -4,7 +4,7 @@ use std::{fmt::Debug, iter::Sum, ops::AddAssign};
 
 use crate::{
     InfersResult,
-    backends::{Backend, Device},
+    backends::{Backend, Device, GemmParams},
 };
 
 /// Represents the CPU backend.
@@ -74,26 +74,20 @@ where
             .collect()
     }
 
-    fn gemm(
-        lhs: &Self::Storage,
-        rhs: &Self::Storage,
-        alpha: T,
-        beta: T,
-        m: usize,
-        n: usize,
-        k: usize,
-    ) -> Self::Storage {
+    fn gemm(params: GemmParams<T, Self::Storage>) -> Self::Storage {
         // See this for optimization: https://salykova.github.io/gemm-cpu
         // Also this implementation looks interesting: https://github.com/Krish120003/gemm-rust/
-        let mut c = vec![T::zero(); m * n];
+        let mut c = vec![T::zero(); params.m * params.n];
 
-        for i in 0..m {
-            for j in 0..n {
+        for i in 0..params.m {
+            for j in 0..params.n {
                 let mut sum = T::zero();
-                for p in 0..k {
-                    sum += lhs[i * k + p] * rhs[p * n + j];
+                for p in 0..params.k {
+                    let lhs_idx = i * params.lhs_strides[0] + p * params.lhs_strides[1];
+                    let rhs_idx = p * params.rhs_strides[0] + j * params.rhs_strides[1];
+                    sum += params.lhs[lhs_idx] * params.rhs[rhs_idx];
                 }
-                c[i * n + j] = alpha * sum + beta * c[i * n + j];
+                c[i * params.n + j] = params.alpha * sum + params.beta * c[i * params.n + j];
             }
         }
 
@@ -161,7 +155,19 @@ mod tests {
     fn test_backend_gemm_cpu() {
         let lhs = vec![1., 2., 3., 4.];
         let rhs = vec![5., 6., 7., 8.];
-        let result = Cpu::gemm(&lhs, &rhs, 1., 0., 2, 2, 2);
+        let lhs_strides = vec![2, 1];
+        let rhs_strides = vec![2, 1];
+        let result = Cpu::gemm(GemmParams {
+            lhs: &lhs,
+            rhs: &rhs,
+            lhs_strides,
+            rhs_strides,
+            alpha: 1.,
+            beta: 0.,
+            m: 2,
+            n: 2,
+            k: 2,
+        });
         assert_eq!(result, vec![19., 22., 43., 50.]);
     }
 

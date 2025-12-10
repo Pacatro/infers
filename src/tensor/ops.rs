@@ -2,6 +2,7 @@ use num_traits::{Float, FromPrimitive, Num};
 use std::ops;
 use std::{fmt::Debug, marker::PhantomData};
 
+use crate::backends::GemmParams;
 use crate::tensor::base::compute_strides;
 use crate::{Tensor, backends::Backend};
 
@@ -220,7 +221,17 @@ where
 
         let alpha = alpha.unwrap_or(T::one());
         let beta = beta.unwrap_or(T::zero());
-        let new_storage = B::gemm(&self.storage, &rhs.storage, alpha, beta, m, n, k);
+        let new_storage = B::gemm(GemmParams {
+            lhs: &self.storage,
+            rhs: &rhs.storage,
+            lhs_strides: self.strides.clone(),
+            rhs_strides: rhs.strides.clone(),
+            alpha,
+            beta,
+            m,
+            n,
+            k,
+        });
         let shape = vec![m, n];
         let strides = compute_strides(&shape);
 
@@ -246,6 +257,9 @@ where
     ///
     /// Panics if the tensor is not 2-dimensional.
     pub fn t(&self) -> Self {
+        // TODO: This only works for 2D tensors,
+        // See https://huggingface.co/blog/KeighBee/tensors-from-scratch-in-rust-p2
+        // to check how to generalize this
         assert_eq!(self.ndims(), 2, "Transpose only works for 2D tensors");
 
         Self {
@@ -401,6 +415,20 @@ mod test {
     }
 
     #[test]
+    fn test_tensor_gemm_transpose_cpu() {
+        let t1 = Tensor::new(&[1., 4., 2., 5., 3., 6.], &[3, 2]);
+        let t2 = t1.t();
+        let t3 = t1.gemm(&t2, None, None);
+
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![17., 22., 27., 22., 29., 36., 27., 36., 45.]
+        );
+        assert_eq!(t3.device(), Device::Cpu);
+        assert_eq!(t3.shape, &[3, 3]);
+    }
+
+    #[test]
     #[ignore = "Not implemented"]
     fn test_tensor_gemm_ndims_cpu() {
         let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
@@ -427,7 +455,7 @@ mod test {
     #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_add_cuda() {
-        use crate::backends::Device;
+        use Device;
 
         let t1 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
@@ -441,7 +469,7 @@ mod test {
     #[test]
     #[cfg(feature = "cuda")]
     fn test_tensor_sub_cuda() {
-        use crate::backends::Device;
+        use Device;
 
         let t1 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
         let t2 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
@@ -523,6 +551,21 @@ mod test {
         );
         assert_eq!(t3.device(), Device::Cuda);
         assert_eq!(t3.shape, &[2, 4]);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_gemm_transpose_cuda() {
+        let t1 = Tensor::<Cuda>::from_data(&[1., 4., 2., 5., 3., 6.], &[3, 2]).unwrap();
+        let t2 = t1.t();
+        let t3 = t1.gemm(&t2, None, None);
+
+        assert_eq!(
+            t3.data().unwrap(),
+            vec![17., 22., 27., 22., 29., 36., 27., 36., 45.]
+        );
+        assert_eq!(t3.device(), Device::Cuda);
+        assert_eq!(t3.shape, &[3, 3]);
     }
 
     #[test]
