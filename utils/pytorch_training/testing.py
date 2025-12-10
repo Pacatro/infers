@@ -1,7 +1,5 @@
 import torch
 import time
-import onnxruntime as ort
-import numpy as np
 
 
 def test_matmul_time():
@@ -30,8 +28,7 @@ def test_matmul_time():
     print(t3)
 
 
-ort_session = ort.InferenceSession("../onnx_models/mnist_fc_model.onnx")
-input_array = np.random.randn(1, 1, 28, 28).astype(np.float32)
-inputs = {ort_session.get_inputs()[0].name: input_array}
-out = ort_session.run(None, inputs)
-print(out)
+t = torch.rand(3, 2, 2)
+t_t = t.T
+print(t.shape)
+print(t_t.shape)
