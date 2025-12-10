@@ -25,5 +25,5 @@ default = []
 cuda = ["cudarc"]
 
 [[bench]]
-name = "tensor_matmul"
+name = "tensor_bench"
 harness = false
