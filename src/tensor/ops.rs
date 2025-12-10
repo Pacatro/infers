@@ -1,5 +1,7 @@
 use num_traits::{Float, FromPrimitive, Num};
+use std::cell::RefCell;
 use std::ops;
+use std::rc::Rc;
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::backends::GemmParams;
@@ -46,15 +48,15 @@ where
 
         let len = self_shape.iter().product();
 
-        let storage = B::add(&self.storage, &rhs.storage, len);
+        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), len);
         let shape = self_shape;
         let strides = compute_strides(shape);
 
-        Self {
-            storage,
+Self {
+            storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
-            len,
+            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -76,12 +78,12 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::sub(&self.storage, &rhs.storage, self.len);
+        let storage = B::sub(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
         let shape = self.shape();
         let strides = &self.strides;
 
         Self {
-            storage,
+            storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
             len: self.len,
@@ -106,12 +108,12 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::mul(&self.storage, &rhs.storage, self.len);
+        let storage = B::mul(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
         let shape = self.shape();
         let strides = &self.strides;
 
         Self {
-            storage,
+            storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
             len: self.len,
@@ -135,13 +137,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::dot(&self.storage, &rhs.storage, self.len);
+        let storage = B::dot(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
 
         let shape = vec![self.len];
         let strides = vec![1];
 
         Self {
-            storage,
+            storage: Rc::new(RefCell::new(storage)),
             shape,
             strides,
             len: self.len,
@@ -156,7 +158,7 @@ where
     /// A new `Tensor` with the ReLU activation applied.
     pub fn relu(&self) -> Self {
         Self {
-            storage: B::relu(&self.storage, self.len),
+            storage: Rc::new(RefCell::new(B::relu(&self.storage.borrow(), self.len))),
             shape: self.shape.clone(),
             strides: self.strides.clone(),
             len: self.len,
@@ -222,8 +224,8 @@ where
         let alpha = alpha.unwrap_or(T::one());
         let beta = beta.unwrap_or(T::zero());
         let new_storage = B::gemm(GemmParams {
-            lhs: &self.storage,
-            rhs: &rhs.storage,
+            lhs: &self.storage.borrow(),
+            rhs: &rhs.storage.borrow(),
             lhs_strides: self.strides.clone(),
             rhs_strides: rhs.strides.clone(),
             alpha,
@@ -236,7 +238,7 @@ where
         let strides = compute_strides(&shape);
 
         Self {
-            storage: new_storage,
+            storage: Rc::new(RefCell::new(new_storage)),
             shape,
             strides,
             len: m * n,

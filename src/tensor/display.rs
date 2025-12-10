@@ -84,7 +84,7 @@ where
         }
 
         // Copy data from device to host
-        let data = match B::copy_to_host(&self.storage) {
+        let data = match B::copy_to_host(&self.storage.borrow()) {
             Ok(data) => data,
             Err(e) => return write!(f, "{:?}", e),
         };

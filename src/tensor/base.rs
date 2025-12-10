@@ -2,8 +2,10 @@ use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use crate::InfersResult;
 use crate::backends::{Backend, Cpu, Device};
@@ -53,7 +55,7 @@ where
     /// The number of elements to skip in the linear storage to advance one unit along each dimension.
     pub(crate) strides: Vec<usize>,
     /// The underlying device-specific storage for the tensor data.
-    pub(crate) storage: B::Storage,
+    pub(crate) storage: Rc<RefCell<B::Storage>>,
     /// The total number of elements in the tensor.
     pub(crate) len: usize,
     /// Marker to hold the backend type without storing data.
@@ -80,7 +82,7 @@ impl Tensor {
             .collect::<Vec<f32>>();
 
         Self {
-            storage: data,
+            storage: Rc::new(RefCell::new(data)),
             shape: shape.to_vec(),
             len,
             strides: compute_strides(shape),
@@ -110,7 +112,7 @@ impl Tensor {
             .collect::<Vec<f32>>();
 
         Tensor {
-            storage: data,
+            storage: Rc::new(RefCell::new(data)),
             shape: shape.to_vec(),
             len,
             strides: compute_strides(shape),
@@ -146,7 +148,7 @@ where
         );
 
         Self {
-            storage: data.to_vec(),
+            storage: Rc::new(RefCell::new(data.to_vec())),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
             len,
@@ -166,7 +168,7 @@ where
     pub fn zeros(shape: &[usize]) -> Self {
         let len = shape.iter().product();
         Self {
-            storage: vec![T::zero(); len],
+            storage: Rc::new(RefCell::new(vec![T::zero(); len])),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
             len,
@@ -190,7 +192,7 @@ where
         let storage = vec![T::one(); len];
 
         Self {
-            storage,
+            storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             len,
             strides,
@@ -221,7 +223,7 @@ where
         let len = shape.iter().product();
         assert_eq!(data.len(), len, "Data length mismatch");
         Ok(Self {
-            storage: B::init(data)?,
+            storage: Rc::new(RefCell::new(B::init(data)?)),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
             len,
@@ -237,7 +239,7 @@ where
     ///
     /// A `Result` containing the data as a linear `Vec<T>` on the host.
     pub fn data(&self) -> InfersResult<Vec<T>> {
-        B::copy_to_host(&self.storage)
+        B::copy_to_host(&self.storage.borrow())
     }
 
     /// Converts a multi-dimensional index tuple into a single linear (physical) index
@@ -276,7 +278,7 @@ where
     /// The value of the element at the specified indices.
     pub fn get(&self, indices: &[usize]) -> T {
         let idx = self.get_physical_index(indices);
-        B::read(&self.storage, idx)
+        B::read(&self.storage.borrow(), idx)
     }
 
     /// Sets a single element in the tensor using multi-dimensional indices.
@@ -289,7 +291,7 @@ where
     /// * `value`: The new value to set.
     pub fn set(&mut self, indices: &[usize], value: T) {
         let idx = self.get_physical_index(indices);
-        B::write(&mut self.storage, idx, value);
+        B::write(&mut self.storage.borrow_mut(), idx, value);
     }
 
     /// Returns the device this tensor resides on.
@@ -334,7 +336,7 @@ where
         SrcB: Backend<T>,
     {
         // Copy data from current device (B) to host (CPU)
-        let host_data = B::copy_to_host(&self.storage)?;
+        let host_data = B::copy_to_host(&self.storage.borrow())?;
         // Initialize new tensor on target device (SrcB) from host data
         Tensor::from_data(&host_data, &self.shape)
     }
