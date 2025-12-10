@@ -41,6 +41,8 @@ pub(crate) fn compute_strides(shape: &[usize]) -> Vec<usize> {
 ///
 /// * `B`: The backend implementation (e.g., `Cpu`, `Cuda`). Defaults to `Cpu`.
 /// * `T`: The element data type (e.g., `f32`, `i32`). Defaults to `f32`.
+// TODO: Check https://huggingface.co/blog/KeighBee/tensors-from-scratch-in-rust-p1
+// for better implementation
 #[derive(Debug, Clone)]
 pub struct Tensor<B = Cpu, T = f32>
 where
