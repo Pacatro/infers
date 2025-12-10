@@ -74,7 +74,7 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with random values.
     pub fn rand(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
+        let len = shape.into_par_iter().product();
 
         let data = (0..len)
             .into_par_iter()
@@ -101,7 +101,7 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with normally distributed random values.
     pub fn randn(shape: &[usize]) -> Self {
-        let len: usize = shape.iter().product();
+        let len = shape.into_par_iter().product();
 
         let data = (0..len)
             .into_par_iter()
@@ -139,7 +139,7 @@ where
     ///
     /// Panics if the length of `data` does not match the total len implied by `shape`.
     pub fn new(data: &[T], shape: &[usize]) -> Self {
-        let len = shape.iter().product();
+        let len = shape.into_par_iter().product();
         assert_eq!(
             data.len(),
             len,
@@ -166,7 +166,7 @@ where
     ///
     /// A tensor of the specified shape filled with the zero element of type `T`.
     pub fn zeros(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
+        let len = shape.into_par_iter().product();
         Self {
             storage: Rc::new(RefCell::new(vec![T::zero(); len])),
             shape: shape.to_vec(),
@@ -186,7 +186,7 @@ where
     ///
     /// A tensor of the specified shape filled with the one element of type `T`.
     pub fn ones(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
+        let len = shape.into_par_iter().product();
 
         let strides = compute_strides(shape);
         let storage = vec![T::one(); len];
@@ -220,7 +220,7 @@ where
     ///
     /// A `Result` containing the initialized `Tensor` or an error if backend initialization fails.
     pub fn from_data(data: &[T], shape: &[usize]) -> InfersResult<Self> {
-        let len = shape.iter().product();
+        let len = shape.into_par_iter().product();
         assert_eq!(data.len(), len, "Data length mismatch");
         Ok(Self {
             storage: Rc::new(RefCell::new(B::init(data)?)),

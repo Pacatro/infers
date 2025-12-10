@@ -46,15 +46,12 @@ where
             "The two tensors must be on the same device."
         );
 
-        let len = self_shape.iter().product();
+        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
+        let strides = compute_strides(self_shape);
 
-        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), len);
-        let shape = self_shape;
-        let strides = compute_strides(shape);
-
-Self {
+        Self {
             storage: Rc::new(RefCell::new(storage)),
-            shape: shape.to_vec(),
+            shape: self_shape.to_vec(),
             strides: strides.to_vec(),
             len: self.len,
             _backend: PhantomData,
