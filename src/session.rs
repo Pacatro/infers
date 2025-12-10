@@ -111,12 +111,7 @@ where
         Ok(weights)
     }
 
-    fn evaluate_node(
-        &self,
-        node: &Node,
-        inputs: Vec<Tensor<B, f32>>,
-    ) -> InfersResult<Tensor<B, f32>> {
-        // TODO: CHECK INFO IN NODES ATTRIBUTES TO CHECK IF THE TENSOR MUST BE TRANSPOSED
+    fn evaluate_node(&self, node: &Node, inputs: Vec<Tensor<B>>) -> InfersResult<Tensor<B>> {
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
