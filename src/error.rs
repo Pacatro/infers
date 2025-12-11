@@ -1,19 +1,48 @@
 use std::fmt;
 
+/// Result type alias for convenience throughout the Infers library
+pub type InfersResult<T> = Result<T, InfersError>;
+
+/// Error type for the Infers inference engine.
 #[derive(Debug)]
 pub enum InfersError {
+    /// I/O related errors (file reading, writing, etc.)
     Io(std::io::Error),
+
+    /// Errors that occur during ONNX protobuf decoding
     OnnxDecode(prost::DecodeError),
+
+    /// Errors related to invalid ONNX model format or structure
     OnnxFormat(String),
+
+    /// Errors that occur during operation execution (invalid inputs, unsupported ops, etc.)
     Operation(String),
+
+    /// Tensor-related errors (invalid dimensions, empty tensors, etc.)
     Tensor(String),
+
+    /// Backend-specific errors (CPU/CUDA backend failures)
     Backend(String),
+
+    /// CUDA-specific errors (driver errors, compilation failures, etc.)
     Cuda(String),
+
+    /// Shape-related errors (dimension mismatches, invalid shapes, etc.)
     Shape(String),
+
+    /// Type-related errors (unsupported data types, type mismatches, etc.)
     Type(String),
+
+    /// Device-related errors (device not available, invalid device selection, etc.)
     Device(String),
+
+    /// Memory-related errors (allocation failures, out of memory, etc.)
     Memory(String),
+
+    /// Parsing errors (string to enum conversion, attribute parsing, etc.)
     Parse(String),
+
+    /// Validation errors (input validation, parameter validation, etc.)
     Validation(String),
 }
 
@@ -88,5 +117,3 @@ impl From<std::array::TryFromSliceError> for InfersError {
         InfersError::Parse(format!("Slice conversion error: {}", err))
     }
 }
-
-pub type InfersResult<T> = Result<T, InfersError>;
