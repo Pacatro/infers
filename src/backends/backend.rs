@@ -214,9 +214,6 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
 
     /// Computes the dot product of two storage blocks.
     ///
-    /// Calculates the sum of element-wise products: Σ(lhs[i] * rhs[i])
-    /// This operation should be optimized to run entirely on the target device.
-    ///
     /// # Arguments
     ///
     /// * `lhs`: The left-hand side operand storage.
