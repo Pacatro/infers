@@ -63,7 +63,7 @@ where
     T: Num + Debug + Clone + Copy + FromPrimitive + Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.len == 0 {
+        if self.size() == 0 {
             return write!(
                 f,
                 "Tensor([], shape: {:?}, device: {}, dtype: {})",
@@ -73,7 +73,7 @@ where
             );
         }
 
-        if self.len > MAX_TENSOR_DISPLAY {
+        if self.size() > MAX_TENSOR_DISPLAY {
             return write!(
                 f,
                 "Tensor([...], shape: {:?}, device: {}, dtype: {})",

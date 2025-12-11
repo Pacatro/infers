@@ -9,19 +9,16 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct InferenceSession<B>
-where
-    B: Backend<f32>,
-{
+pub struct InferenceSession<B: Backend> {
     pub model_path: String,
     pub graph: Graph,
-    pub weights: HashMap<String, Tensor<B, f32>>,
+    pub weights: HashMap<String, Tensor<B>>,
     pub device: Device,
 }
 
 impl<B> InferenceSession<B>
 where
-    B: Backend<f32>,
+    B: Backend,
 {
     pub fn new(model_path: &str) -> InfersResult<Self> {
         let mut file = File::open(model_path)?;

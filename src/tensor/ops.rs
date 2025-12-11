@@ -46,14 +46,13 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
+        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
         let strides = compute_strides(self_shape);
 
         Self {
             storage: Rc::new(RefCell::new(storage)),
             shape: self_shape.to_vec(),
             strides: strides.to_vec(),
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -75,7 +74,7 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::sub(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
+        let storage = B::sub(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
         let shape = self.shape();
         let strides = &self.strides;
 
@@ -83,7 +82,6 @@ where
             storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -105,7 +103,7 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::mul(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
+        let storage = B::mul(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
         let shape = self.shape();
         let strides = &self.strides;
 
@@ -113,7 +111,6 @@ where
             storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -134,16 +131,15 @@ where
             "The two tensors must be on the same device."
         );
 
-        let storage = B::dot(&self.storage.borrow(), &rhs.storage.borrow(), self.len);
+        let storage = B::dot(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
 
-        let shape = vec![self.len];
+        let shape = vec![self.size()];
         let strides = vec![1];
 
         Self {
             storage: Rc::new(RefCell::new(storage)),
             shape,
             strides,
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -155,10 +151,9 @@ where
     /// A new `Tensor` with the ReLU activation applied.
     pub fn relu(&self) -> Self {
         Self {
-            storage: Rc::new(RefCell::new(B::relu(&self.storage.borrow(), self.len))),
+            storage: Rc::new(RefCell::new(B::relu(&self.storage.borrow(), self.size()))),
             shape: self.shape.clone(),
             strides: self.strides.clone(),
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -171,9 +166,8 @@ where
     pub fn flatten(&self) -> Self {
         Self {
             storage: self.storage.clone(),
-            shape: vec![self.len],
+            shape: vec![self.size()],
             strides: vec![1],
-            len: self.len,
             _backend: PhantomData,
         }
     }
@@ -238,7 +232,6 @@ where
             storage: Rc::new(RefCell::new(new_storage)),
             shape,
             strides,
-            len: m * n,
             _backend: PhantomData,
         }
     }
@@ -265,7 +258,6 @@ where
             storage: self.storage.clone(),
             shape: vec![self.shape[1], self.shape[0]],
             strides: vec![self.strides[1], self.strides[0]],
-            len: self.len,
             _backend: PhantomData,
         }
     }

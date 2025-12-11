@@ -32,4 +32,3 @@ fn main() -> InfersResult<()> {
     println!("Output: {:?}", output.data().unwrap());
     Ok(())
 }
-

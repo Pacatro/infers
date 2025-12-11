@@ -1,7 +1,6 @@
 use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
-use rayon::prelude::*;
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -56,8 +55,6 @@ where
     pub(crate) strides: Vec<usize>,
     /// The underlying device-specific storage for the tensor data.
     pub(crate) storage: Rc<RefCell<B::Storage>>,
-    /// The total number of elements in the tensor.
-    pub(crate) len: usize,
     /// Marker to hold the backend type without storing data.
     pub(crate) _backend: PhantomData<B>,
 }
@@ -74,17 +71,15 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with random values.
     pub fn rand(shape: &[usize]) -> Self {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
 
         let data = (0..len)
-            .into_par_iter()
             .map(|_| rand::random::<f32>())
             .collect::<Vec<f32>>();
 
         Self {
             storage: Rc::new(RefCell::new(data)),
             shape: shape.to_vec(),
-            len,
             strides: compute_strides(shape),
             _backend: PhantomData,
         }
@@ -101,10 +96,9 @@ impl Tensor {
     ///
     /// A tensor of type `f32` with normally distributed random values.
     pub fn randn(shape: &[usize]) -> Self {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
 
         let data = (0..len)
-            .into_par_iter()
             .map(|_| {
                 let mut rng = rand::rng();
                 rng.sample(StandardNormal)
@@ -114,7 +108,6 @@ impl Tensor {
         Tensor {
             storage: Rc::new(RefCell::new(data)),
             shape: shape.to_vec(),
-            len,
             strides: compute_strides(shape),
             _backend: PhantomData,
         }
@@ -139,7 +132,7 @@ where
     ///
     /// Panics if the length of `data` does not match the total len implied by `shape`.
     pub fn new(data: &[T], shape: &[usize]) -> Self {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
         assert_eq!(
             data.len(),
             len,
@@ -151,7 +144,6 @@ where
             storage: Rc::new(RefCell::new(data.to_vec())),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            len,
             _backend: PhantomData,
         }
     }
@@ -166,12 +158,11 @@ where
     ///
     /// A tensor of the specified shape filled with the zero element of type `T`.
     pub fn zeros(shape: &[usize]) -> Self {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
         Self {
             storage: Rc::new(RefCell::new(vec![T::zero(); len])),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            len,
             _backend: PhantomData,
         }
     }
@@ -186,7 +177,7 @@ where
     ///
     /// A tensor of the specified shape filled with the one element of type `T`.
     pub fn ones(shape: &[usize]) -> Self {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
 
         let strides = compute_strides(shape);
         let storage = vec![T::one(); len];
@@ -194,7 +185,6 @@ where
         Self {
             storage: Rc::new(RefCell::new(storage)),
             shape: shape.to_vec(),
-            len,
             strides,
             _backend: PhantomData,
         }
@@ -220,13 +210,12 @@ where
     ///
     /// A `Result` containing the initialized `Tensor` or an error if backend initialization fails.
     pub fn from_data(data: &[T], shape: &[usize]) -> InfersResult<Self> {
-        let len = shape.into_par_iter().product();
+        let len = shape.iter().product();
         assert_eq!(data.len(), len, "Data length mismatch");
         Ok(Self {
             storage: Rc::new(RefCell::new(B::init(data)?)),
             shape: shape.to_vec(),
             strides: compute_strides(shape),
-            len,
             _backend: PhantomData,
         })
     }
@@ -255,7 +244,7 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the number of indices does not match the tensor's rank (`shape.len()`).
+    /// Panics if the number of indices does not match the tensor's rank (`shape.size()`).
     fn get_physical_index(&self, indices: &[usize]) -> usize {
         assert_eq!(indices.len(), self.shape.len(), "Index rank mismatch");
         let mut physical_idx = 0;
@@ -300,13 +289,16 @@ where
     }
 
     /// Returns the total number of elements in the tensor (the product of all dimensions).
-    pub fn len(&self) -> usize {
-        self.len
+    ///
+    /// This method computes the size dynamically by multiplying all dimensions
+    /// in the tensor's shape.
+    pub fn size(&self) -> usize {
+        self.shape.iter().product()
     }
 
     /// Returns `true` if the tensor is empty (i.e., has zero length).
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.size() == 0
     }
 
     /// Returns the number of dimensions of the tensor.
@@ -355,7 +347,7 @@ mod tests {
     fn test_tensor_new() {
         let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 2, 3, 4]);
         assert_eq!(t.device(), Device::Cpu);
@@ -365,7 +357,7 @@ mod tests {
     fn test_tensor_zeros() {
         let t = Tensor::<Cpu, i32>::zeros(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![0, 0, 0, 0]);
     }
@@ -374,7 +366,7 @@ mod tests {
     fn test_tensor_ones() {
         let t = Tensor::<Cpu, i32>::ones(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.strides, &[2, 1]);
         assert_eq!(t.data().unwrap(), vec![1, 1, 1, 1]);
     }
@@ -383,9 +375,9 @@ mod tests {
     fn test_tensor_rand() {
         let t = Tensor::rand(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.device(), Device::Cpu);
     }
 
@@ -393,9 +385,9 @@ mod tests {
     fn test_tensor_randn() {
         let t = Tensor::randn(&[2, 2]);
         assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.len, 4);
+        assert_eq!(t.size(), 4);
         assert_eq!(t.device(), Device::Cpu);
     }
 
@@ -426,7 +418,7 @@ mod tests {
         let t_cuda = t_cpu.to::<Cuda>().unwrap();
         assert_eq!(t_cuda.device(), Device::Cuda);
         assert_eq!(t_cuda.shape, t_cpu.shape);
-        assert_eq!(t_cuda.len, t_cpu.len);
+        assert_eq!(t_cuda.size(), t_cpu.size());
         assert_eq!(t_cuda.strides, t_cpu.strides);
         assert_eq!(t_cuda.data().unwrap(), t_cpu.data().unwrap());
     }
