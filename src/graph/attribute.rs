@@ -1,4 +1,5 @@
 use crate::{
+    error::InfersError,
     InfersResult,
     onnx::{AttributeProto, attribute_proto::AttributeType},
 };
@@ -24,7 +25,7 @@ pub struct Attribute {
 }
 
 impl TryFrom<&AttributeProto> for Attribute {
-    type Error = Box<dyn std::error::Error>;
+    type Error = InfersError;
 
     fn try_from(attr_proto: &AttributeProto) -> InfersResult<Attribute> {
         let name = attr_proto.name();
@@ -33,7 +34,7 @@ impl TryFrom<&AttributeProto> for Attribute {
             AttributeType::Float => AttributeValue::Float(attr_proto.f()),
             AttributeType::Int => AttributeValue::Int64(attr_proto.i()),
             AttributeType::Ints => AttributeValue::VecInt64(attr_proto.ints.clone()),
-            _ => Err("Unsupported attribute type")?,
+            _ => Err(InfersError::Parse("Unsupported attribute type".to_string()))?,
         };
 
         Ok(Self {
@@ -105,7 +106,7 @@ mod tests {
         assert!(attr_result.is_err());
         assert_eq!(
             attr_result.unwrap_err().to_string(),
-            "Unsupported attribute type"
+            "Parse error: Unsupported attribute type"
         );
     }
 }

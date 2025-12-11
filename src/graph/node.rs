@@ -1,4 +1,5 @@
 use crate::{
+    error::InfersError,
     InfersResult,
     graph::{Attribute, AttributeValue, OpType},
     onnx::NodeProto,
@@ -39,7 +40,7 @@ impl Node {
 }
 
 impl TryFrom<&NodeProto> for Node {
-    type Error = Box<dyn std::error::Error>;
+    type Error = InfersError;
 
     /// Creates a new `Node` from the given `NodeProto`.
     ///

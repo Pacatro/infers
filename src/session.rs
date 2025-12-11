@@ -2,6 +2,7 @@ use prost::Message;
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
+    error::InfersError,
     InfersResult, Tensor,
     backends::{Backend, Device},
     graph::{AttributeValue, Graph, Node, OpType},
@@ -27,11 +28,11 @@ where
         let model = ModelProto::decode(&*buffer)?;
 
         let Some(graph_proto) = model.graph.as_ref() else {
-            return Err("Invalid ONNX format, model does not have a graph".into());
+            return Err(InfersError::OnnxFormat("model does not have a graph".to_string()));
         };
 
         if graph_proto.node.is_empty() {
-            return Err("Invalid ONNX format, graph has no nodes".into());
+            return Err(InfersError::OnnxFormat("graph has no nodes".to_string()));
         }
 
         let weights = Self::load_weights(&graph_proto.initializer)?;
@@ -53,14 +54,14 @@ where
             let output = self.evaluate_node(node, inputs)?;
 
             if output.is_empty() {
-                return Err("Output tensor is empty".into());
+                return Err(InfersError::Tensor("Output tensor is empty".to_string()));
             }
 
             self.weights.insert(node.output[0].to_string(), output);
         }
 
         let Some(output) = self.weights.get(&self.graph.outputs[0]) else {
-            return Err("Output tensor is empty".into());
+            return Err(InfersError::Tensor("Output tensor is empty".to_string()));
         };
 
         Ok(output.clone())
@@ -103,7 +104,7 @@ where
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
-                    return Err("Invalid number of inputs for Add operation".into());
+                    return Err(InfersError::Operation("Invalid number of inputs for Add operation".to_string()));
                 }
 
                 let lhs = &inputs[0];
@@ -113,7 +114,7 @@ where
             }
             OpType::Gemm => {
                 if inputs.len() != 3 {
-                    return Err("Invalid number of inputs for Gemm operation".into());
+                    return Err(InfersError::Operation("Invalid number of inputs for Gemm operation".to_string()));
                 }
 
                 // Helper that checks if an attribute with the given name is set to 1
@@ -151,7 +152,7 @@ where
             }
             OpType::Flatten => {
                 if inputs.is_empty() {
-                    return Err("Invalid number of inputs for Flatten operation".into());
+                    return Err(InfersError::Operation("Invalid number of inputs for Flatten operation".to_string()));
                 }
 
                 // Assume (for now) that the input is a single tensor
@@ -159,12 +160,12 @@ where
             }
             OpType::Relu => {
                 if inputs.len() != 1 {
-                    return Err("Invalid number of inputs for Relu operation".into());
+                    return Err(InfersError::Operation("Invalid number of inputs for Relu operation".to_string()));
                 }
 
                 Ok(inputs[0].relu())
             }
-            _ => Err("Invalid operation".into()),
+            _ => Err(InfersError::Operation("Invalid operation".to_string())),
         }
     }
 

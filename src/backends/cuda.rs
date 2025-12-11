@@ -46,7 +46,7 @@ fn execute_elementwise_op(
             .launch(config)?;
     }
 
-    stream.synchronize().unwrap();
+    stream.synchronize()?;
 
     Ok(CudaStorage {
         context: ctx,
@@ -76,7 +76,7 @@ pub struct CudaStorage {
 #[derive(Debug, Clone, Copy)]
 pub struct Cuda;
 
-impl Backend<f32> for Cuda {
+impl Backend for Cuda {
     type Storage = CudaStorage;
 
     fn device() -> Device {
@@ -169,6 +169,7 @@ impl Backend<f32> for Cuda {
         let config = LaunchConfig {
             grid_dim: (grid.0 as u32, grid.1 as u32, 1),
             block_dim: (block.0 as u32, block.1 as u32, 1),
+
             // TILE_SIZE * (TILE_SIZE + 1) * sizeof(float) * 2 matrices (As and Bs)
             // TILE_SIZE = 16, float size = 4 bytes
             // 16 * 17 * 4 * 2 = 2176 bytes

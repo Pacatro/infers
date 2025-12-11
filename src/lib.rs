@@ -1,4 +1,5 @@
 pub mod backends;
+pub mod error;
 pub mod graph;
 mod session;
 mod tensor;
@@ -11,4 +12,4 @@ pub use session::InfersSession;
 pub use tensor::Tensor;
 // pub use graph::Graph;
 
-pub type InfersResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub use error::{InfersError, InfersResult};

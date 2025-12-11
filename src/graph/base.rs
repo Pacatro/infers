@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{InfersResult, graph::Node, onnx::GraphProto};
+use crate::{error::InfersError, InfersResult, graph::Node, onnx::GraphProto};
 
 /// Representation of a node inside the computational graph along with
 /// its connectivity information.
@@ -173,7 +173,7 @@ impl<'a> IntoIterator for &'a mut Graph {
 }
 
 impl TryFrom<&GraphProto> for Graph {
-    type Error = Box<dyn std::error::Error>;
+    type Error = InfersError;
 
     fn try_from(graph_proto: &GraphProto) -> InfersResult<Self> {
         let mut graph = Self::default();

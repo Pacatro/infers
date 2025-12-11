@@ -23,12 +23,12 @@ fn main() -> InfersResult<()> {
         let now = Instant::now();
         let output = run_inference::<Cuda>()?;
         println!("Time taken: {:?}", now.elapsed());
-        println!("Output: {:?}", output.data()?);
+        println!("Output: {}", output);
     }
 
     let now = Instant::now();
     let output = run_inference::<Cpu>()?;
     println!("Time taken: {:?}", now.elapsed());
-    println!("Output: {:?}", output.data().unwrap());
+    println!("Output: {}", output);
     Ok(())
 }

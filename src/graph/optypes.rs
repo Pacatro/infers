@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::InfersResult;
+use crate::{error::InfersError, InfersResult};
 
 /// The type of an operation in the graph.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -35,7 +35,7 @@ impl fmt::Display for OpType {
 }
 
 impl FromStr for OpType {
-    type Err = Box<dyn std::error::Error>;
+    type Err = InfersError;
 
     fn from_str(value: &str) -> InfersResult<OpType> {
         match value {
@@ -46,13 +46,13 @@ impl FromStr for OpType {
             // ONNX use "Reshape" for flatten:
             "Reshape" | "Flatten" => Ok(OpType::Flatten),
             "Relu" => Ok(OpType::Relu),
-            other => Err(format!("Unknown op type: {}", other).into()),
+            other => Err(InfersError::Parse(format!("Unknown op type: {}", other))),
         }
     }
 }
 
 impl TryFrom<&str> for OpType {
-    type Error = Box<dyn std::error::Error>;
+    type Error = InfersError;
 
     fn try_from(value: &str) -> InfersResult<OpType> {
         OpType::from_str(value)
