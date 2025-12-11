@@ -6,8 +6,8 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::InfersResult;
 use crate::backends::{Backend, Cpu, Device};
+use crate::core::InfersResult;
 
 /// Calculates the strides (step size in linear memory) for a given tensor shape
 /// assuming a row-major (C-style) memory layout.

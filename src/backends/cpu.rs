@@ -3,8 +3,8 @@ use rayon::prelude::*;
 use std::{fmt::Debug, iter::Sum, ops::AddAssign};
 
 use crate::{
-    InfersResult,
     backends::{Backend, Device, GemmParams},
+    core::InfersResult,
 };
 
 /// Represents the CPU backend.

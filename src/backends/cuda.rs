@@ -6,8 +6,8 @@ use cudarc::{
 use std::{fmt::Debug, sync::Arc};
 
 use crate::{
-    InfersResult,
     backends::{Backend, Device, GemmParams},
+    core::InfersResult,
 };
 
 /// Compiles a CUDA kernel from a string source.

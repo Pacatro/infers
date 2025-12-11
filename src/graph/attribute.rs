@@ -1,6 +1,5 @@
 use crate::{
-    error::InfersError,
-    InfersResult,
+    core::{InfersError, InfersResult},
     onnx::{AttributeProto, attribute_proto::AttributeType},
 };
 

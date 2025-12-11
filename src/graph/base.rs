@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{error::InfersError, InfersResult, graph::Node, onnx::GraphProto};
+use crate::{core::InfersError, core::InfersResult, graph::Node, onnx::GraphProto};
 
 /// Representation of a node inside the computational graph along with
 /// its connectivity information.

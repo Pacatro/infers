@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{error::InfersError, InfersResult};
+use crate::core::{InfersError, InfersResult};
 
 /// The type of an operation in the graph.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

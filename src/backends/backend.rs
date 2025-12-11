@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::InfersResult;
+use crate::core::InfersResult;
 
 /// Parameters for General Matrix Multiply (GEMM) operations.
 ///

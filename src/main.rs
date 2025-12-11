@@ -1,8 +1,9 @@
 use std::time::Instant;
 
 use infers::{
-    InfersResult, InfersSession, Tensor,
+    Tensor,
     backends::{Backend, Cpu},
+    core::{InfersResult, InfersSession},
 };
 
 const MODEL_PATH: &str = "onnx_models/iris_model.onnx";

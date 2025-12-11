@@ -1,6 +1,5 @@
 use crate::{
-    error::InfersError,
-    InfersResult,
+    core::{InfersError, InfersResult},
     graph::{Attribute, AttributeValue, OpType},
     onnx::NodeProto,
 };

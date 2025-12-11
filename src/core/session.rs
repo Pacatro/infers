@@ -2,9 +2,10 @@ use prost::Message;
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
-    error::InfersError,
-    InfersResult, Tensor,
+    Tensor,
     backends::{Backend, Device},
+    core::InfersError,
+    core::InfersResult,
     graph::{AttributeValue, Graph, Node, OpType},
     onnx::{ModelProto, TensorProto},
 };
@@ -28,7 +29,9 @@ where
         let model = ModelProto::decode(&*buffer)?;
 
         let Some(graph_proto) = model.graph.as_ref() else {
-            return Err(InfersError::OnnxFormat("model does not have a graph".to_string()));
+            return Err(InfersError::OnnxFormat(
+                "model does not have a graph".to_string(),
+            ));
         };
 
         if graph_proto.node.is_empty() {
@@ -104,7 +107,9 @@ where
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
-                    return Err(InfersError::Operation("Invalid number of inputs for Add operation".to_string()));
+                    return Err(InfersError::Operation(
+                        "Invalid number of inputs for Add operation".to_string(),
+                    ));
                 }
 
                 let lhs = &inputs[0];
@@ -114,7 +119,9 @@ where
             }
             OpType::Gemm => {
                 if inputs.len() != 3 {
-                    return Err(InfersError::Operation("Invalid number of inputs for Gemm operation".to_string()));
+                    return Err(InfersError::Operation(
+                        "Invalid number of inputs for Gemm operation".to_string(),
+                    ));
                 }
 
                 // Helper that checks if an attribute with the given name is set to 1
@@ -152,7 +159,9 @@ where
             }
             OpType::Flatten => {
                 if inputs.is_empty() {
-                    return Err(InfersError::Operation("Invalid number of inputs for Flatten operation".to_string()));
+                    return Err(InfersError::Operation(
+                        "Invalid number of inputs for Flatten operation".to_string(),
+                    ));
                 }
 
                 // Assume (for now) that the input is a single tensor
@@ -160,7 +169,9 @@ where
             }
             OpType::Relu => {
                 if inputs.len() != 1 {
-                    return Err(InfersError::Operation("Invalid number of inputs for Relu operation".to_string()));
+                    return Err(InfersError::Operation(
+                        "Invalid number of inputs for Relu operation".to_string(),
+                    ));
                 }
 
                 Ok(inputs[0].relu())
