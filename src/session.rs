@@ -9,14 +9,14 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct InferenceSession<B: Backend> {
+pub struct InfersSession<B: Backend> {
     pub model_path: String,
     pub graph: Graph,
     pub weights: HashMap<String, Tensor<B>>,
     pub device: Device,
 }
 
-impl<B> InferenceSession<B>
+impl<B> InfersSession<B>
 where
     B: Backend,
 {
@@ -89,18 +89,9 @@ where
                     })
                     .collect();
 
-                let expected_len: usize = dims.iter().product();
-                let data = data?;
-
-                let shape = if expected_len == data.len() {
-                    dims.as_slice()
-                } else {
-                    &[data.len()]
-                };
-
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::<B>::from_data(&data, shape)?,
+                    Tensor::<B>::from_data(&data?, &dims)?,
                 );
             }
         }
@@ -209,12 +200,12 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
+        let weights = InfersSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
         assert_eq!(tensor.shape(), &[2, 2]);
-        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.size(), 4);
         assert_eq!(tensor.strides, &[2, 1]);
         assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
         assert!(tensor.device() == Device::Cpu);
@@ -236,12 +227,12 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
+        let weights = InfersSession::<Cpu>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
         assert_eq!(tensor.shape(), &[2, 2]);
-        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.size(), 4);
         assert_eq!(tensor.strides, &[2, 1]);
         assert_eq!(tensor.data().unwrap(), orig);
         assert!(tensor.device() == Device::Cpu);
@@ -257,12 +248,12 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
+        let weights = InfersSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
         assert_eq!(tensor.shape(), &[2, 2]);
-        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.size(), 4);
         assert_eq!(tensor.strides, &[2, 1]);
         assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
         assert!(tensor.device() == Device::Cuda);
@@ -285,12 +276,12 @@ mod tests {
             ..Default::default()
         };
 
-        let weights = InferenceSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
+        let weights = InfersSession::<Cuda>::load_weights(&[tensor_proto]).unwrap();
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
         assert_eq!(tensor.shape(), &[2, 2]);
-        assert_eq!(tensor.len(), 4);
+        assert_eq!(tensor.size(), 4);
         assert_eq!(tensor.strides, &[2, 1]);
         assert_eq!(tensor.data().unwrap(), orig);
         assert_eq!(tensor.device(), Device::Cuda);
