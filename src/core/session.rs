@@ -124,21 +124,24 @@ where
                     ));
                 }
 
-                // Helper that checks if an attribute with the given name is set to 1
+                // Checks if an attribute with the given name is set to 1
                 let is_transposed = |attr_name: &str| -> bool {
-                    matches!(node.get_attribute(attr_name), Some(AttributeValue::Int64(x)) if x != 0)
+                    matches!(node.get_attribute(attr_name), Some(attr) if matches!(attr.value, AttributeValue::Int64(x) if x != 0))
                 };
 
-                // Get the alpha and beta attributes,
-                let alpha = match node.get_attribute("alpha") {
-                    Some(AttributeValue::Float(alpha)) => Some(alpha),
-                    _ => None,
+                // Get the attribute value
+                let get_attr = |attr_name: &str| -> Option<f32> {
+                    match node.get_attribute(attr_name) {
+                        Some(attr) => match &attr.value {
+                            AttributeValue::Float(alpha) => Some(*alpha),
+                            _ => None,
+                        },
+                        _ => None,
+                    }
                 };
 
-                let beta = match node.get_attribute("beta") {
-                    Some(AttributeValue::Float(beta)) => Some(beta),
-                    _ => None,
-                };
+                let alpha = get_attr("alpha");
+                let beta = get_attr("beta");
 
                 let trans_a = is_transposed("transA");
                 let trans_b = is_transposed("transB");
