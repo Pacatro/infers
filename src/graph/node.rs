@@ -1,9 +1,10 @@
+use std::{collections::HashMap, str::FromStr};
+
 use crate::{
     core::{InfersError, InfersResult},
     graph::{Attribute, AttributeValue, OpType},
     onnx::NodeProto,
 };
-use std::{collections::HashMap, str::FromStr};
 
 /// Represents a node in a computation graph.
 #[derive(Debug, PartialEq, Clone)]
@@ -21,17 +22,6 @@ pub struct Node {
 }
 
 impl Node {
-    /// Creates a new `Node` with the given name and operation type.
-    pub fn new(name: String, op_type: OpType) -> Self {
-        Self {
-            name,
-            op_type,
-            input: vec![],
-            output: vec![],
-            attributes: HashMap::new(),
-        }
-    }
-
     /// Returns the value of the attribute with the given name, if it exists.
     pub fn get_attribute(&self, name: &str) -> Option<AttributeValue> {
         self.attributes.get(name).map(|attr| attr.value.clone())
