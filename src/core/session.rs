@@ -118,7 +118,7 @@ where
                 Ok(lhs.add(rhs))
             }
             OpType::Gemm => {
-                if inputs.len() != 3 {
+                if inputs.len() > 3 || inputs.len() < 2 {
                     return Err(InfersError::Operation(
                         "Invalid number of inputs for Gemm operation".to_string(),
                     ));
@@ -146,9 +146,9 @@ where
                 let trans_a = is_transposed("transA");
                 let trans_b = is_transposed("transB");
 
+                // SAFETY: We have already checked that inputs.len() > 2
                 let lhs = &inputs[0];
                 let rhs = &inputs[1];
-                let bias = &inputs[2];
 
                 let mm = match (trans_a, trans_b) {
                     (false, false) => lhs.gemm(rhs, alpha, beta),
@@ -157,21 +157,25 @@ where
                     (true, true) => lhs.t().gemm(&rhs.t(), alpha, beta),
                 };
 
-                // We finnaly add the bias
-                Ok(mm.add(bias))
+                // Add bias if it exists
+                let bias = inputs.get(2);
+                match bias {
+                    Some(b) => Ok(mm.add(b)),
+                    None => Ok(mm),
+                }
             }
             OpType::Flatten => {
-                if inputs.is_empty() {
+                if inputs.is_empty() || inputs.len() != 1 {
                     return Err(InfersError::Operation(
                         "Invalid number of inputs for Flatten operation".to_string(),
                     ));
                 }
 
-                // Assume (for now) that the input is a single tensor
+                // SAFETY: We have already checked that the input is a single tensor
                 Ok(inputs[0].flatten())
             }
             OpType::Relu => {
-                if inputs.len() != 1 {
+                if inputs.is_empty() || inputs.len() != 1 {
                     return Err(InfersError::Operation(
                         "Invalid number of inputs for Relu operation".to_string(),
                     ));
