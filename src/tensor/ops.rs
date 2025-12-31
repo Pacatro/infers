@@ -8,6 +8,17 @@ use crate::backends::GemmParams;
 use crate::tensor::base::compute_strides;
 use crate::{Tensor, backends::Backend};
 
+/// Formats a 1D shape into a 2D shape.
+fn format_1dshape(shape: &[usize]) -> Vec<usize> {
+    let ndims = shape.len();
+
+    if ndims != 1 {
+        return shape.to_vec();
+    }
+
+    vec![1, shape[0]]
+}
+
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
@@ -22,18 +33,8 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn add(&self, rhs: &Self) -> Self {
-        // Format 1D tensors shape as column vectors [30] -> [1, 30]
-        let self_shape = if self.ndims() == 1 {
-            &[1, self.shape[0]]
-        } else {
-            self.shape.as_slice()
-        };
-
-        let rhs_shape = if rhs.ndims() == 1 {
-            &[1, rhs.shape[0]]
-        } else {
-            rhs.shape.as_slice()
-        };
+        let self_shape = format_1dshape(&self.shape);
+        let rhs_shape = format_1dshape(&rhs.shape);
 
         let self_ndims = self_shape.len();
         let rhs_ndims = rhs_shape.len();
@@ -47,7 +48,7 @@ where
         );
 
         let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let strides = compute_strides(self_shape);
+        let strides = compute_strides(&self_shape);
 
         Self {
             storage: Rc::new(RefCell::new(storage)),
@@ -66,7 +67,13 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn sub(&self, rhs: &Self) -> Self {
-        assert_eq!(self.ndims(), self.ndims());
+        let self_shape = format_1dshape(&self.shape);
+        let rhs_shape = format_1dshape(&rhs.shape);
+
+        let self_ndims = self_shape.len();
+        let rhs_ndims = rhs_shape.len();
+
+        assert_eq!(self_ndims, rhs_ndims);
 
         assert_eq!(
             self.device(),
@@ -75,12 +82,11 @@ where
         );
 
         let storage = B::sub(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let shape = self.shape();
-        let strides = &self.strides;
+        let strides = compute_strides(&self_shape);
 
         Self {
             storage: Rc::new(RefCell::new(storage)),
-            shape: shape.to_vec(),
+            shape: self_shape.to_vec(),
             strides: strides.to_vec(),
             _backend: PhantomData,
         }
@@ -95,7 +101,13 @@ where
     ///
     /// Panics if the tensors have different shapes or reside on different devices.
     pub fn mul(&self, rhs: &Self) -> Self {
-        assert_eq!(self.ndims(), self.ndims());
+        let self_shape = format_1dshape(&self.shape);
+        let rhs_shape = format_1dshape(&rhs.shape);
+
+        let self_ndims = self_shape.len();
+        let rhs_ndims = rhs_shape.len();
+
+        assert_eq!(self_ndims, rhs_ndims);
 
         assert_eq!(
             self.device(),
@@ -104,12 +116,11 @@ where
         );
 
         let storage = B::mul(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let shape = self.shape();
-        let strides = &self.strides;
+        let strides = compute_strides(&self_shape);
 
         Self {
             storage: Rc::new(RefCell::new(storage)),
-            shape: shape.to_vec(),
+            shape: self_shape.to_vec(),
             strides: strides.to_vec(),
             _backend: PhantomData,
         }
@@ -417,6 +428,18 @@ mod test {
         );
         assert_eq!(t3.device(), Device::Cpu);
         assert_eq!(t3.shape, &[3, 3]);
+    }
+
+    #[test]
+    fn test_1d_tensor_ops() {
+        let t1 = Tensor::new(&[1., 2., 3., 4.], &[4]);
+        let t2 = Tensor::new(&[5., 6., 7., 8.], &[4]);
+        let t3 = t1.add(&t2);
+        let t4 = t1.sub(&t2);
+        let t5 = t1.mul(&t2);
+        assert_eq!(t3.ndims(), 2);
+        assert_eq!(t4.ndims(), 2);
+        assert_eq!(t5.ndims(), 2);
     }
 
     #[test]

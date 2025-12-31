@@ -10,6 +10,10 @@ use crate::{
     onnx::{ModelProto, TensorProto},
 };
 
+/// Represents a session for running inference on a neural network model loaded from an ONNX file.
+///
+/// This struct holds the loaded model graph, weights, and device information necessary for executing
+/// the computational graph defined in the ONNX model.
 #[derive(Debug, Clone)]
 pub struct InfersSession<B: Backend> {
     pub model_path: String,
@@ -22,6 +26,14 @@ impl<B> InfersSession<B>
 where
     B: Backend,
 {
+    /// Creates a new `InfersSession` by loading an ONNX model from the specified file path.
+    ///
+    /// This method reads the ONNX model file, decodes it, validates the presence of a graph and nodes,
+    /// loads the model weights, and constructs the computational graph.
+    ///
+    /// # Arguments
+    ///
+    /// - `model_path`: The file path to the ONNX model file.
     pub fn new(model_path: &str) -> InfersResult<Self> {
         let mut file = File::open(model_path)?;
         let mut buffer = Vec::new();
@@ -49,6 +61,14 @@ where
         })
     }
 
+    /// Runs inference on the loaded model with the given input tensor.
+    ///
+    /// This method executes the computational graph by iterating through each node, preparing inputs,
+    /// evaluating operations, and storing intermediate results. The final output tensor is returned.
+    ///
+    /// # Arguments
+    ///
+    /// - `input`: The input tensor to feed into the model.
     pub fn run(&mut self, input: Tensor<B>) -> InfersResult<Tensor<B>> {
         self.weights.insert(self.graph.inputs[0].to_string(), input);
 
@@ -70,6 +90,14 @@ where
         Ok(output.clone())
     }
 
+    /// Loads model weights from the ONNX initializer tensors.
+    ///
+    /// This method processes each initializer tensor in the ONNX graph, converting the data
+    /// (either float_data or raw_data) into tensors and storing them in a hashmap keyed by name.
+    ///
+    /// # Arguments
+    ///
+    /// - `initializer`: A slice of `TensorProto` containing the initializer data.
     fn load_weights(initializer: &[TensorProto]) -> InfersResult<HashMap<String, Tensor<B, f32>>> {
         let mut weights = HashMap::new();
 
@@ -103,6 +131,15 @@ where
         Ok(weights)
     }
 
+    /// Evaluates a single node in the computational graph.
+    ///
+    /// This method performs the operation specified by the node's op_type on the given inputs.
+    /// Currently supports Add, Gemm, Flatten, and Relu operations.
+    ///
+    /// # Arguments
+    ///
+    /// - `node`: The graph node to evaluate.
+    /// - `inputs`: The input tensors for the node operation.
     fn evaluate_node(&self, node: &Node, inputs: Vec<Tensor<B>>) -> InfersResult<Tensor<B>> {
         match node.op_type {
             OpType::Add => {
@@ -187,6 +224,14 @@ where
         }
     }
 
+    /// Prepares the input tensors for a given node by retrieving them from the weights map.
+    ///
+    /// This method looks up each input name in the node's input list within the session's weights
+    /// and collects the corresponding tensors.
+    ///
+    /// # Arguments
+    ///
+    /// - `node`: The graph node for which to prepare inputs.
     fn prepare_inputs(&self, node: &Node) -> Vec<Tensor<B, f32>> {
         let mut inputs = vec![];
 
@@ -207,8 +252,6 @@ mod tests {
     use crate::backends::Cuda;
 
     use super::*;
-
-    // TODO: Create test for method `new`
 
     #[test]
     fn test_load_weights_float_data_cpu() {
