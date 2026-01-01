@@ -167,6 +167,8 @@ impl Backend for Cuda {
                 .unwrap();
         }
 
+        stream.synchronize().expect("Synchronize failed");
+
         CudaStorage {
             context: ctx,
             buffer: out_device,
@@ -217,7 +219,7 @@ impl Backend for Cuda {
                 .unwrap();
         }
 
-        stream.synchronize().unwrap();
+        stream.synchronize().expect("Synchronize failed");
 
         CudaStorage {
             context: ctx,
@@ -253,7 +255,7 @@ impl Backend for Cuda {
                 .unwrap();
         }
 
-        stream.synchronize().unwrap();
+        stream.synchronize().expect("Synchronize failed");
 
         CudaStorage {
             context: ctx,
