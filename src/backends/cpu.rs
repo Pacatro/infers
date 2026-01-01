@@ -28,12 +28,12 @@ where
         Ok(data.to_vec())
     }
 
-    fn read(storage: &Self::Storage, index: usize) -> T {
-        storage[index]
+    fn read(storage: &Self::Storage, idx: usize) -> T {
+        storage[idx]
     }
 
-    fn write(storage: &mut Self::Storage, index: usize, value: T) {
-        storage[index] = value;
+    fn write(storage: &mut Self::Storage, idx: usize, value: T) {
+        storage[idx] = value;
     }
 
     fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<T>>
@@ -177,5 +177,20 @@ mod tests {
         let rhs = vec![5., 6., 7., 8.];
         let result = Cpu::dot(&lhs, &rhs, 4);
         assert_eq!(result, vec![70.]);
+    }
+
+    #[test]
+    fn test_read_cpu() {
+        let host = vec![1.0f32, 2.0, 3.0, 4.0];
+        let storage = Cpu::init(&host).unwrap();
+        assert_eq!(Cpu::read(&storage, 2), 3.0);
+    }
+
+    #[test]
+    fn test_write_cpu() {
+        let host = vec![1.0f32, 2.0, 3.0, 4.0];
+        let mut storage = Cpu::init(&host).unwrap();
+        Cpu::write(&mut storage, 2, 5.0);
+        assert_eq!(Cpu::read(&storage, 2), 5.0);
     }
 }

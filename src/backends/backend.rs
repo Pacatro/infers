@@ -90,7 +90,7 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
     /// A `Result` containing the initialized `Self::Storage` on success, or an error.
     fn init(data: &[T]) -> InfersResult<Self::Storage>;
 
-    /// Reads a single element from the device storage at a given index.
+    /// Reads a single element from the device storage at a given idx.
     ///
     /// This operation might involve a slow device-to-host synchronization/transfer
     /// for GPU backends. It should primarily be used for debugging or small reads.
@@ -98,12 +98,12 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
     /// # Arguments
     ///
     /// * `storage`: A reference to the device storage.
-    /// * `index`: The zero-based index of the element to read.
+    /// * `idx`: The zero-based index of the element to read.
     ///
     /// # Returns
     ///
-    /// The value of the element at `index`.
-    fn read(storage: &Self::Storage, index: usize) -> T;
+    /// The value of the element at `idx`.
+    fn read(storage: &Self::Storage, idx: usize) -> T;
 
     /// Writes a single element to the device storage at a given index.
     ///
@@ -113,9 +113,9 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
     /// # Arguments
     ///
     /// * `storage`: A mutable reference to the device storage.
-    /// * `index`: The zero-based index where the value should be written.
+    /// * `idx`: The zero-based index where the value should be written.
     /// * `value`: The new value of type `T`.
-    fn write(storage: &mut Self::Storage, index: usize, value: T);
+    fn write(storage: &mut Self::Storage, idx: usize, value: T);
 
     /// Copies the entire contents of the device storage back to a host (CPU) `Vec<T>`.
     ///

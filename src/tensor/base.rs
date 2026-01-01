@@ -422,4 +422,20 @@ mod tests {
         assert_eq!(t_cuda.strides, t_cpu.strides);
         assert_eq!(t_cuda.data().unwrap(), t_cpu.data().unwrap());
     }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_get_cuda() {
+        let t = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        assert_eq!(t.get(&[0, 0]), 1.);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn test_tensor_set_cuda() {
+        let mut t = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
+        assert_eq!(t.get(&[0, 0]), 1.);
+        t.set(&[0, 0], 10.);
+        assert_eq!(t.get(&[0, 0]), 10.);
+    }
 }

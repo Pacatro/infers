@@ -94,18 +94,38 @@ impl Backend for Cuda {
         })
     }
 
-    fn read(storage: &Self::Storage, index: usize) -> f32 {
+    fn read(storage: &Self::Storage, idx: usize) -> f32 {
         let stream = storage.context.default_stream();
-        let host_buf = vec![0.0; storage.buffer.len()];
-        stream.clone_dtoh(&storage.buffer).unwrap();
-        host_buf[index]
+
+        let view = storage
+            .buffer
+            .try_slice(idx..idx + 1)
+            .expect("Slice failed");
+
+        let host_val = stream
+            .clone_dtoh(&view)
+            .expect("DTOH failed for single element");
+
+        stream.synchronize().expect("Synchronize failed");
+
+        host_val[0]
     }
 
-    fn write(storage: &mut Self::Storage, index: usize, value: f32) {
+    fn write(storage: &mut Self::Storage, idx: usize, value: f32) {
         let stream = storage.context.default_stream();
-        let mut host_buf = stream.clone_dtoh(&storage.buffer).expect("DTOH failed");
-        host_buf[index] = value;
-        storage.buffer = stream.clone_htod(&host_buf).expect("HTOD failed");
+
+        let mut view = storage
+            .buffer
+            .try_slice_mut(idx..idx + 1)
+            .expect("Slice failed");
+
+        let host_val = [value];
+
+        stream
+            .memcpy_htod(&host_val, &mut view)
+            .expect("HTOD failed for single element");
+
+        stream.synchronize().expect("Synchronize failed");
     }
 
     fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<f32>> {
@@ -328,5 +348,20 @@ mod tests {
         let s_out = Cuda::dot(&s_lhs, &s_rhs, size);
         let result = Cuda::copy_to_host(&s_out).unwrap();
         assert_eq!(result, vec![70.0]);
+    }
+
+    #[test]
+    fn test_read_cuda() {
+        let host = vec![1.0f32, 2.0, 3.0, 4.0];
+        let storage = Cuda::init(&host).unwrap();
+        assert_eq!(Cuda::read(&storage, 2), 3.0);
+    }
+
+    #[test]
+    fn test_write_cuda() {
+        let host = vec![1.0f32, 2.0, 3.0, 4.0];
+        let mut storage = Cuda::init(&host).unwrap();
+        Cuda::write(&mut storage, 2, 5.0);
+        assert_eq!(Cuda::read(&storage, 2), 5.0);
     }
 }
