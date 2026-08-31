@@ -1,10 +1,10 @@
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{
-    core::{InfersError, InfersResult},
     graph::{Attribute, OpType},
     onnx::NodeProto,
 };
+use anyhow::Result;
 
 /// Represents a node in a computation graph.
 #[derive(Debug, PartialEq, Clone)]
@@ -29,14 +29,14 @@ impl Node {
 }
 
 impl TryFrom<&NodeProto> for Node {
-    type Error = InfersError;
+    type Error = anyhow::Error;
 
     /// Creates a new `Node` from the given `NodeProto`.
     ///
     /// # Errors
     ///
     /// Returns an error if the `NodeProto` is invalid.
-    fn try_from(node_proto: &NodeProto) -> InfersResult<Node> {
+    fn try_from(node_proto: &NodeProto) -> Result<Node> {
         let name = node_proto.name().to_string();
         let op_type = OpType::from_str(node_proto.op_type())?;
         let input = node_proto.input.clone();

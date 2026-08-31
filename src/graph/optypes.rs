@@ -1,7 +1,8 @@
+use anyhow::bail;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::core::{InfersError, InfersResult};
+use anyhow::Result;
 
 /// The type of an operation in the graph.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -35,9 +36,9 @@ impl fmt::Display for OpType {
 }
 
 impl FromStr for OpType {
-    type Err = InfersError;
+    type Err = anyhow::Error;
 
-    fn from_str(value: &str) -> InfersResult<OpType> {
+    fn from_str(value: &str) -> Result<OpType> {
         match value {
             "Input" => Ok(OpType::Input),
             "Output" => Ok(OpType::Output),
@@ -46,15 +47,15 @@ impl FromStr for OpType {
             // ONNX use "Reshape" for flatten:
             "Reshape" | "Flatten" => Ok(OpType::Flatten),
             "Relu" => Ok(OpType::Relu),
-            other => Err(InfersError::Parse(format!("Unknown op type: {}", other))),
+            other => bail!("unknown operation type: {other}"),
         }
     }
 }
 
 impl TryFrom<&str> for OpType {
-    type Error = InfersError;
+    type Error = anyhow::Error;
 
-    fn try_from(value: &str) -> InfersResult<OpType> {
+    fn try_from(value: &str) -> Result<OpType> {
         OpType::from_str(value)
     }
 }

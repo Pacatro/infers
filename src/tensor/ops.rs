@@ -1,20 +1,19 @@
 use std::{fmt::Debug, sync::Arc};
 
+use anyhow::bail;
 use num_traits::{FromPrimitive, Num};
 
-use crate::{
-    backends::{Backend, GemmParams},
-    core::InfersResult,
-};
+use crate::backends::{Backend, GemmParams};
+use anyhow::Result;
 
-use super::{Layout, Shape, Tensor, TensorError};
+use super::{Layout, Shape, Tensor};
 
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
     T: Num + FromPrimitive + Clone + Copy + Debug + Send + Sync,
 {
-    pub fn add(&self, rhs: &Self) -> InfersResult<Self> {
+    pub fn add(&self, rhs: &Self) -> Result<Self> {
         let output_shape = self.shape().broadcast_with(rhs.shape())?;
         let storage = B::add(
             self.storage.as_ref(),
@@ -26,7 +25,7 @@ where
         Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    pub fn sub(&self, rhs: &Self) -> InfersResult<Self> {
+    pub fn sub(&self, rhs: &Self) -> Result<Self> {
         let output_shape = self.shape().broadcast_with(rhs.shape())?;
         let storage = B::sub(
             self.storage.as_ref(),
@@ -38,7 +37,7 @@ where
         Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    pub fn mul(&self, rhs: &Self) -> InfersResult<Self> {
+    pub fn mul(&self, rhs: &Self) -> Result<Self> {
         let output_shape = self.shape().broadcast_with(rhs.shape())?;
         let storage = B::mul(
             self.storage.as_ref(),
@@ -50,14 +49,13 @@ where
         Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    pub fn dot(&self, rhs: &Self) -> InfersResult<Self> {
+    pub fn dot(&self, rhs: &Self) -> Result<Self> {
         if self.rank() != 1 || rhs.rank() != 1 || self.shape() != rhs.shape() {
-            return Err(TensorError::IncompatibleShapes {
-                operation: "dot product",
-                lhs: self.dims().to_vec(),
-                rhs: rhs.dims().to_vec(),
-            }
-            .into());
+            bail!(
+                "incompatible shapes for dot product: {:?} and {:?}",
+                self.dims(),
+                rhs.dims()
+            );
         }
 
         let storage = B::dot(
@@ -72,7 +70,7 @@ where
         ))
     }
 
-    pub fn relu(&self) -> InfersResult<Self> {
+    pub fn relu(&self) -> Result<Self> {
         let storage = B::relu(self.storage.as_ref(), &self.layout)?;
         Ok(Self::from_parts(
             storage,
@@ -80,7 +78,7 @@ where
         ))
     }
 
-    pub fn reshape(&self, dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn reshape(&self, dims: impl Into<Vec<usize>>) -> Result<Self> {
         let layout = self.layout.reshape(Shape::new(dims)?)?;
         Ok(Self {
             storage: Arc::clone(&self.storage),
@@ -89,13 +87,12 @@ where
         })
     }
 
-    pub fn flatten(&self, axis: usize) -> InfersResult<Self> {
+    pub fn flatten(&self, axis: usize) -> Result<Self> {
         if axis > self.rank() {
-            return Err(TensorError::InvalidAxis {
-                axis,
-                rank: self.rank(),
-            }
-            .into());
+            bail!(
+                "axis {axis} is invalid for a tensor of rank {}",
+                self.rank()
+            );
         }
 
         let outer = Shape::new(self.dims()[..axis].to_vec())?.num_elements();
@@ -103,7 +100,7 @@ where
         self.reshape([outer, inner])
     }
 
-    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> InfersResult<Self> {
+    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> Result<Self> {
         let layout = self.layout.transpose(axis_a, axis_b)?;
         Ok(Self {
             storage: Arc::clone(&self.storage),
@@ -112,18 +109,14 @@ where
         })
     }
 
-    pub fn t(&self) -> InfersResult<Self> {
+    pub fn t(&self) -> Result<Self> {
         if self.rank() != 2 {
-            return Err(TensorError::InvalidAxis {
-                axis: 1,
-                rank: self.rank(),
-            }
-            .into());
+            bail!("axis 1 is invalid for a tensor of rank {}", self.rank());
         }
         self.transpose(0, 1)
     }
 
-    pub fn contiguous(&self) -> InfersResult<Self> {
+    pub fn contiguous(&self) -> Result<Self> {
         if self.is_contiguous() {
             return Ok(self.clone());
         }
@@ -135,7 +128,7 @@ where
         ))
     }
 
-    pub fn gemm(&self, rhs: &Self, alpha: Option<T>, beta: Option<T>) -> InfersResult<Self> {
+    pub fn gemm(&self, rhs: &Self, alpha: Option<T>, beta: Option<T>) -> Result<Self> {
         if self.rank() == 1 && rhs.rank() == 1 {
             return self.dot(rhs);
         }

@@ -1,9 +1,7 @@
 use std::fmt::{Debug, Display};
 
-use crate::{
-    core::InfersResult,
-    tensor::{Layout, Shape},
-};
+use crate::tensor::{Layout, Shape};
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct GemmParams<'a, T, S> {
@@ -42,14 +40,14 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
 
     fn device() -> Device;
 
-    fn from_host(data: Vec<T>) -> InfersResult<Self::Storage>;
+    fn from_host(data: Vec<T>) -> Result<Self::Storage>;
 
-    fn read(storage: &Self::Storage, index: usize) -> InfersResult<T>;
+    fn read(storage: &Self::Storage, index: usize) -> Result<T>;
 
     /// Materializes the logical tensor represented by `layout` on the host.
-    fn to_host(storage: &Self::Storage, layout: &Layout) -> InfersResult<Vec<T>>;
+    fn to_host(storage: &Self::Storage, layout: &Layout) -> Result<Vec<T>>;
 
-    fn contiguous(storage: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage> {
+    fn contiguous(storage: &Self::Storage, layout: &Layout) -> Result<Self::Storage> {
         Self::from_host(Self::to_host(storage, layout)?)
     }
 
@@ -59,7 +57,7 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage>;
+    ) -> Result<Self::Storage>;
 
     fn sub(
         lhs: &Self::Storage,
@@ -67,7 +65,7 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage>;
+    ) -> Result<Self::Storage>;
 
     fn mul(
         lhs: &Self::Storage,
@@ -75,16 +73,16 @@ pub trait Backend<T = f32>: Clone + Debug + Copy {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage>;
+    ) -> Result<Self::Storage>;
 
-    fn relu(input: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage>;
+    fn relu(input: &Self::Storage, layout: &Layout) -> Result<Self::Storage>;
 
-    fn gemm(params: GemmParams<T, Self::Storage>) -> InfersResult<Self::Storage>;
+    fn gemm(params: GemmParams<T, Self::Storage>) -> Result<Self::Storage>;
 
     fn dot(
         lhs: &Self::Storage,
         lhs_layout: &Layout,
         rhs: &Self::Storage,
         rhs_layout: &Layout,
-    ) -> InfersResult<Self::Storage>;
+    ) -> Result<Self::Storage>;
 }

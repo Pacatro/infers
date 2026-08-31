@@ -4,9 +4,9 @@ use num_traits::{FromPrimitive, Num};
 
 use crate::{
     backends::{Backend, Device, GemmParams},
-    core::InfersResult,
     tensor::{Layout, Shape},
 };
+use anyhow::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu;
@@ -42,15 +42,15 @@ where
         Device::Cpu
     }
 
-    fn from_host(data: Vec<T>) -> InfersResult<Self::Storage> {
+    fn from_host(data: Vec<T>) -> Result<Self::Storage> {
         Ok(data)
     }
 
-    fn read(storage: &Self::Storage, index: usize) -> InfersResult<T> {
+    fn read(storage: &Self::Storage, index: usize) -> Result<T> {
         Ok(storage[index])
     }
 
-    fn to_host(storage: &Self::Storage, layout: &Layout) -> InfersResult<Vec<T>> {
+    fn to_host(storage: &Self::Storage, layout: &Layout) -> Result<Vec<T>> {
         if layout.is_contiguous() {
             return Ok(storage[..layout.shape().num_elements()].to_vec());
         }
@@ -69,7 +69,7 @@ where
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         Ok(elementwise(
             lhs,
             lhs_layout,
@@ -86,7 +86,7 @@ where
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         Ok(elementwise(
             lhs,
             lhs_layout,
@@ -103,7 +103,7 @@ where
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         Ok(elementwise(
             lhs,
             lhs_layout,
@@ -114,14 +114,14 @@ where
         ))
     }
 
-    fn relu(input: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage> {
+    fn relu(input: &Self::Storage, layout: &Layout) -> Result<Self::Storage> {
         Ok(Self::to_host(input, layout)?
             .into_iter()
             .map(|value| if value > T::zero() { value } else { T::zero() })
             .collect())
     }
 
-    fn gemm(params: GemmParams<T, Self::Storage>) -> InfersResult<Self::Storage> {
+    fn gemm(params: GemmParams<T, Self::Storage>) -> Result<Self::Storage> {
         let mut output = vec![T::zero(); params.m * params.n];
         let lhs_strides = params.lhs_layout.strides();
         let rhs_strides = params.rhs_layout.strides();
@@ -146,7 +146,7 @@ where
         lhs_layout: &Layout,
         rhs: &Self::Storage,
         rhs_layout: &Layout,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         let lhs = Self::to_host(lhs, lhs_layout)?;
         let rhs = Self::to_host(rhs, rhs_layout)?;
         Ok(vec![lhs.into_iter().zip(rhs).map(|(a, b)| a * b).sum()])

@@ -7,4 +7,4 @@ pub mod onnx {
     include!(concat!(env!("OUT_DIR"), "/onnx.rs"));
 }
 
-pub use tensor::{Layout, Shape, Tensor, TensorError};
+pub use tensor::{Layout, Shape, Tensor};

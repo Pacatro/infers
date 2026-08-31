@@ -1,15 +1,11 @@
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
+use anyhow::{Result, anyhow, bail};
 use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
 
-use crate::{
-    backends::{Backend, Cpu, Device},
-    core::InfersResult,
-};
-
-use super::TensorError;
+use crate::backends::{Backend, Cpu, Device};
 
 /// Logical dimensions of a tensor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,13 +15,11 @@ pub struct Shape {
 }
 
 impl Shape {
-    pub fn new(dims: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+    pub fn new(dims: impl Into<Vec<usize>>) -> Result<Self> {
         let dims = dims.into();
         let num_elements = dims.iter().try_fold(1usize, |size, &dimension| {
             size.checked_mul(dimension)
-                .ok_or_else(|| TensorError::ShapeOverflow {
-                    shape: dims.clone(),
-                })
+                .ok_or_else(|| anyhow!("shape {:?} exceeds the addressable tensor size", dims))
         })?;
 
         Ok(Self { dims, num_elements })
@@ -51,7 +45,7 @@ impl Shape {
         self.dims.get(axis).copied()
     }
 
-    pub fn broadcast_with(&self, other: &Self) -> Result<Self, TensorError> {
+    pub fn broadcast_with(&self, other: &Self) -> Result<Self> {
         let output_rank = self.rank().max(other.rank());
         let mut output = Vec::with_capacity(output_rank);
 
@@ -66,11 +60,11 @@ impl Shape {
                 .map_or(1, |axis| other.dims[axis]);
 
             if lhs != rhs && lhs != 1 && rhs != 1 {
-                return Err(TensorError::IncompatibleShapes {
-                    operation: "broadcast",
-                    lhs: self.dims.clone(),
-                    rhs: other.dims.clone(),
-                });
+                bail!(
+                    "incompatible shapes for broadcast: {:?} and {:?}",
+                    self.dims,
+                    other.dims
+                );
             }
 
             output.push(if lhs == 1 { rhs } else { lhs });
@@ -80,13 +74,13 @@ impl Shape {
         Self::new(output)
     }
 
-    pub fn matmul_with(&self, other: &Self) -> Result<Self, TensorError> {
+    pub fn matmul_with(&self, other: &Self) -> Result<Self> {
         if self.rank() != 2 || other.rank() != 2 || self.dims[1] != other.dims[0] {
-            return Err(TensorError::IncompatibleShapes {
-                operation: "matrix multiplication",
-                lhs: self.dims.clone(),
-                rhs: other.dims.clone(),
-            });
+            bail!(
+                "incompatible shapes for matrix multiplication: {:?} and {:?}",
+                self.dims,
+                other.dims
+            );
         }
 
         Self::new(vec![self.dims[0], other.dims[1]])
@@ -112,12 +106,13 @@ impl Layout {
         Self { shape, strides }
     }
 
-    pub(crate) fn from_parts(shape: Shape, strides: Vec<usize>) -> Result<Self, TensorError> {
+    pub(crate) fn from_parts(shape: Shape, strides: Vec<usize>) -> Result<Self> {
         if shape.rank() != strides.len() {
-            return Err(TensorError::ShapeStrideRankMismatch {
-                shape_rank: shape.rank(),
-                strides_rank: strides.len(),
-            });
+            bail!(
+                "shape rank {} does not match strides rank {}",
+                shape.rank(),
+                strides.len()
+            );
         }
 
         Ok(Self { shape, strides })
@@ -135,27 +130,28 @@ impl Layout {
         self.strides == compute_strides(self.shape.dims())
     }
 
-    pub fn reshape(&self, shape: Shape) -> Result<Self, TensorError> {
+    pub fn reshape(&self, shape: Shape) -> Result<Self> {
         if self.shape.num_elements() != shape.num_elements() {
-            return Err(TensorError::InvalidReshape {
-                from: self.shape.dims.clone(),
-                to: shape.dims,
-            });
+            bail!(
+                "cannot reshape tensor from {:?} to {:?}",
+                self.shape.dims,
+                shape.dims
+            );
         }
         if !self.is_contiguous() {
-            return Err(TensorError::NonContiguousReshape);
+            bail!("cannot reshape a non-contiguous tensor without copying");
         }
 
         Ok(Self::contiguous(shape))
     }
 
-    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> Result<Self, TensorError> {
+    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> Result<Self> {
         let rank = self.shape.rank();
         if axis_a >= rank {
-            return Err(TensorError::InvalidAxis { axis: axis_a, rank });
+            bail!("axis {axis_a} is invalid for a tensor of rank {rank}");
         }
         if axis_b >= rank {
-            return Err(TensorError::InvalidAxis { axis: axis_b, rank });
+            bail!("axis {axis_b} is invalid for a tensor of rank {rank}");
         }
 
         let mut dims = self.shape.dims.clone();
@@ -166,17 +162,18 @@ impl Layout {
         Self::from_parts(Shape::new(dims)?, strides)
     }
 
-    pub(crate) fn physical_index(&self, indices: &[usize]) -> Result<usize, TensorError> {
+    pub(crate) fn physical_index(&self, indices: &[usize]) -> Result<usize> {
         if indices.len() != self.shape.rank()
             || indices
                 .iter()
                 .zip(self.shape.dims())
                 .any(|(&index, &dimension)| index >= dimension)
         {
-            return Err(TensorError::InvalidIndex {
-                indices: indices.to_vec(),
-                shape: self.shape.dims.clone(),
-            });
+            bail!(
+                "index {:?} is outside tensor shape {:?}",
+                indices,
+                self.shape.dims
+            );
         }
 
         Ok(indices
@@ -239,7 +236,7 @@ where
 }
 
 impl Tensor<Cpu, f32> {
-    pub fn rand(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn rand(dims: impl Into<Vec<usize>>) -> Result<Self> {
         let shape = Shape::new(dims)?;
         let data = (0..shape.num_elements())
             .map(|_| rand::random::<f32>())
@@ -247,7 +244,7 @@ impl Tensor<Cpu, f32> {
         Self::from_vec(data, shape.dims)
     }
 
-    pub fn randn(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn randn(dims: impl Into<Vec<usize>>) -> Result<Self> {
         let shape = Shape::new(dims)?;
         let mut rng = rand::rng();
         let data = (0..shape.num_elements())
@@ -262,16 +259,16 @@ where
     Cpu: Backend<T, Storage = Vec<T>>,
     T: Num + Clone + Copy + FromPrimitive + Debug + Send + Sync,
 {
-    pub fn new(data: &[T], dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn new(data: &[T], dims: impl Into<Vec<usize>>) -> Result<Self> {
         Self::from_vec(data.to_vec(), dims)
     }
 
-    pub fn zeros(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn zeros(dims: impl Into<Vec<usize>>) -> Result<Self> {
         let shape = Shape::new(dims)?;
         Self::from_vec(vec![T::zero(); shape.num_elements()], shape.dims)
     }
 
-    pub fn ones(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn ones(dims: impl Into<Vec<usize>>) -> Result<Self> {
         let shape = Shape::new(dims)?;
         Self::from_vec(vec![T::one(); shape.num_elements()], shape.dims)
     }
@@ -282,22 +279,22 @@ where
     B: Backend<T>,
     T: Num + FromPrimitive + Clone + Copy + Debug + Send + Sync,
 {
-    pub fn from_vec(data: Vec<T>, dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn from_vec(data: Vec<T>, dims: impl Into<Vec<usize>>) -> Result<Self> {
         let shape = Shape::new(dims)?;
         if data.len() != shape.num_elements() {
-            return Err(TensorError::DataLengthMismatch {
-                expected: shape.num_elements(),
-                actual: data.len(),
-                shape: shape.dims.clone(),
-            }
-            .into());
+            bail!(
+                "data length {} does not match shape {:?} ({} elements)",
+                data.len(),
+                shape.dims,
+                shape.num_elements()
+            );
         }
 
         let storage = B::from_host(data)?;
         Ok(Self::from_parts(storage, Layout::contiguous(shape)))
     }
 
-    pub fn from_data(data: &[T], dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+    pub fn from_data(data: &[T], dims: impl Into<Vec<usize>>) -> Result<Self> {
         Self::from_vec(data.to_vec(), dims)
     }
 
@@ -309,11 +306,11 @@ where
         }
     }
 
-    pub fn data(&self) -> InfersResult<Vec<T>> {
+    pub fn data(&self) -> Result<Vec<T>> {
         B::to_host(self.storage.as_ref(), &self.layout)
     }
 
-    pub fn get(&self, indices: &[usize]) -> InfersResult<T> {
+    pub fn get(&self, indices: &[usize]) -> Result<T> {
         let index = self.layout.physical_index(indices)?;
         B::read(self.storage.as_ref(), index)
     }
@@ -358,7 +355,7 @@ where
         self.layout.is_contiguous()
     }
 
-    pub fn to<Destination>(&self) -> InfersResult<Tensor<Destination, T>>
+    pub fn to<Destination>(&self) -> Result<Tensor<Destination, T>>
     where
         Destination: Backend<T>,
     {
@@ -397,7 +394,10 @@ mod tests {
     #[test]
     fn tensor_construction_validates_data_length() {
         let error = Tensor::<Cpu, i32>::new(&[1, 2, 3], [2, 2]).unwrap_err();
-        assert!(matches!(error, crate::core::InfersError::Tensor(_)));
+        assert_eq!(
+            error.to_string(),
+            "data length 3 does not match shape [2, 2] (4 elements)"
+        );
     }
 
     #[test]

@@ -54,10 +54,11 @@ The project currently exposes an `InfersSession` that loads an ONNX model and ru
 use infers::{
     Tensor,
     backends::Cpu,
-    core::{InfersResult, InfersSession},
+    core::InfersSession,
 };
+use anyhow::Result;
 
-fn main() -> InfersResult<()> {
+fn main() -> Result<()> {
     let mut session = InfersSession::<Cpu>::new("model.onnx")?;
     let input = Tensor::new(&[0.3545, -0.5851, 0.5578, 0.0222], &[1, 4]).to::<Cpu>()?;
     let output = session.run(input)?;

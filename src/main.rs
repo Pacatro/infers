@@ -1,14 +1,15 @@
+use anyhow::Result;
 use std::time::Instant;
 
 use infers::{
     Tensor,
     backends::{Backend, Cpu},
-    core::{InfersResult, InfersSession},
+    core::InfersSession,
 };
 
 const MODEL_PATH: &str = "onnx_models/iris_model.onnx";
 
-fn run_inference<B: Backend>() -> InfersResult<Tensor<B>> {
+fn run_inference<B: Backend>() -> Result<Tensor<B>> {
     let mut session = InfersSession::new(MODEL_PATH)?;
     let input = Tensor::new(&[0.3545, -0.5851, 0.5578, 0.0222], [1, 4])?.to::<B>()?;
     println!("Input:\n{}", input);
@@ -17,7 +18,7 @@ fn run_inference<B: Backend>() -> InfersResult<Tensor<B>> {
     Ok(output)
 }
 
-fn main() -> InfersResult<()> {
+fn main() -> Result<()> {
     #[cfg(feature = "cuda")]
     {
         use infers::backends::Cuda;

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.104"
 cudarc = { version = "0.18.1", features = [
   "cuda-version-from-build-system",
 ], optional = true }

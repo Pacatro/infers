@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use cudarc::{
     driver::{CudaContext, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg},
     nvrtc::compile_ptx,
 };
 
 use crate::{
+    anyhow::Result,
     backends::{Backend, Device, GemmParams},
-    core::InfersResult,
     tensor::{Layout, Shape},
 };
 
@@ -15,13 +16,13 @@ fn compile_kernel(
     source: &str,
     function_name: &str,
     context: &Arc<CudaContext>,
-) -> InfersResult<CudaFunction> {
+) -> Result<CudaFunction> {
     let ptx = compile_ptx(source)?;
     let module = context.load_module(ptx)?;
     module.load_function(function_name).map_err(Into::into)
 }
 
-fn raw_to_host(storage: &CudaStorage) -> InfersResult<Vec<f32>> {
+fn raw_to_host(storage: &CudaStorage) -> Result<Vec<f32>> {
     storage
         .context
         .default_stream()
@@ -36,7 +37,7 @@ fn host_elementwise<F>(
     rhs_layout: &Layout,
     output_shape: &Shape,
     operation: F,
-) -> InfersResult<CudaStorage>
+) -> Result<CudaStorage>
 where
     F: Fn(f32, f32) -> f32,
 {
@@ -58,7 +59,7 @@ fn execute_elementwise_kernel(
     size: usize,
     source: &str,
     function_name: &str,
-) -> InfersResult<CudaStorage> {
+) -> Result<CudaStorage> {
     let context = Arc::clone(&lhs.context);
     let stream = context.default_stream();
     let function = compile_kernel(source, function_name, &context)?;
@@ -100,21 +101,22 @@ impl Backend for Cuda {
         Device::Cuda
     }
 
-    fn from_host(data: Vec<f32>) -> InfersResult<Self::Storage> {
+    fn from_host(data: Vec<f32>) -> Result<Self::Storage> {
         let context = CudaContext::new(0)?;
         let buffer = context.default_stream().clone_htod(&data)?;
         Ok(CudaStorage { context, buffer })
     }
 
-    fn read(storage: &Self::Storage, index: usize) -> InfersResult<f32> {
+    fn read(storage: &Self::Storage, index: usize) -> Result<f32> {
         let stream = storage.context.default_stream();
-        let view = storage.buffer.try_slice(index..index + 1).ok_or_else(|| {
-            crate::core::InfersError::Memory("CUDA scalar index is outside the buffer".to_string())
-        })?;
+        let view = storage
+            .buffer
+            .try_slice(index..index + 1)
+            .ok_or_else(|| anyhow!("CUDA scalar index is outside the buffer"))?;
         Ok(stream.clone_dtoh(&view)?[0])
     }
 
-    fn to_host(storage: &Self::Storage, layout: &Layout) -> InfersResult<Vec<f32>> {
+    fn to_host(storage: &Self::Storage, layout: &Layout) -> Result<Vec<f32>> {
         let data = raw_to_host(storage)?;
         if layout.is_contiguous() {
             return Ok(data[..layout.shape().num_elements()].to_vec());
@@ -131,7 +133,7 @@ impl Backend for Cuda {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         if Arc::ptr_eq(&lhs.context, &rhs.context)
             && lhs_layout.is_contiguous()
             && rhs_layout.is_contiguous()
@@ -155,7 +157,7 @@ impl Backend for Cuda {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         if Arc::ptr_eq(&lhs.context, &rhs.context)
             && lhs_layout.is_contiguous()
             && rhs_layout.is_contiguous()
@@ -179,7 +181,7 @@ impl Backend for Cuda {
         rhs: &Self::Storage,
         rhs_layout: &Layout,
         output_shape: &Shape,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         if Arc::ptr_eq(&lhs.context, &rhs.context)
             && lhs_layout.is_contiguous()
             && rhs_layout.is_contiguous()
@@ -197,7 +199,7 @@ impl Backend for Cuda {
         host_elementwise(lhs, lhs_layout, rhs, rhs_layout, output_shape, |a, b| a * b)
     }
 
-    fn relu(input: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage> {
+    fn relu(input: &Self::Storage, layout: &Layout) -> Result<Self::Storage> {
         if !layout.is_contiguous() {
             let data = Self::to_host(input, layout)?;
             return Self::from_host(
@@ -230,7 +232,7 @@ impl Backend for Cuda {
         })
     }
 
-    fn gemm(params: GemmParams<f32, Self::Storage>) -> InfersResult<Self::Storage> {
+    fn gemm(params: GemmParams<f32, Self::Storage>) -> Result<Self::Storage> {
         if !Arc::ptr_eq(&params.lhs.context, &params.rhs.context) {
             let lhs = raw_to_host(params.lhs)?;
             let rhs = raw_to_host(params.rhs)?;
@@ -302,7 +304,7 @@ impl Backend for Cuda {
         lhs_layout: &Layout,
         rhs: &Self::Storage,
         rhs_layout: &Layout,
-    ) -> InfersResult<Self::Storage> {
+    ) -> Result<Self::Storage> {
         let lhs = Self::to_host(lhs, lhs_layout)?;
         let rhs = Self::to_host(rhs, rhs_layout)?;
         let result = lhs.into_iter().zip(rhs).map(|(a, b)| a * b).sum::<f32>();

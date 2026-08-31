@@ -1,11 +1,10 @@
+use anyhow::{Context, Result, bail};
 use prost::Message;
 use std::{collections::HashMap, fs::File, io::Read};
 
 use crate::{
     Tensor,
     backends::{Backend, Device},
-    core::InfersError,
-    core::InfersResult,
     graph::{AttributeValue, Graph, Node, OpType},
     onnx::{ModelProto, TensorProto},
 };
@@ -34,20 +33,21 @@ where
     /// # Arguments
     ///
     /// - `model_path`: The file path to the ONNX model file.
-    pub fn new(model_path: &str) -> InfersResult<Self> {
-        let mut file = File::open(model_path)?;
+    pub fn new(model_path: &str) -> Result<Self> {
+        let mut file = File::open(model_path)
+            .with_context(|| format!("failed to open ONNX model at {model_path}"))?;
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-        let model = ModelProto::decode(&*buffer)?;
+        file.read_to_end(&mut buffer)
+            .with_context(|| format!("failed to read ONNX model at {model_path}"))?;
+        let model = ModelProto::decode(&*buffer)
+            .with_context(|| format!("failed to decode ONNX model at {model_path}"))?;
 
         let Some(graph_proto) = model.graph.as_ref() else {
-            return Err(InfersError::OnnxFormat(
-                "model does not have a graph".to_string(),
-            ));
+            bail!("invalid ONNX format: model does not have a graph");
         };
 
         if graph_proto.node.is_empty() {
-            return Err(InfersError::OnnxFormat("graph has no nodes".to_string()));
+            bail!("invalid ONNX format: graph has no nodes");
         }
 
         let weights = Self::load_weights(&graph_proto.initializer)?;
@@ -69,7 +69,7 @@ where
     /// # Arguments
     ///
     /// - `input`: The input tensor to feed into the model.
-    pub fn run(&mut self, input: Tensor<B>) -> InfersResult<Tensor<B>> {
+    pub fn run(&mut self, input: Tensor<B>) -> Result<Tensor<B>> {
         self.weights.insert(self.graph.inputs[0].to_string(), input);
 
         for node in self.graph.iter() {
@@ -77,14 +77,14 @@ where
             let output = self.evaluate_node(node, inputs)?;
 
             if output.is_empty() {
-                return Err(InfersError::Tensor("Output tensor is empty".to_string()));
+                bail!("output tensor is empty");
             }
 
             self.weights.insert(node.output[0].to_string(), output);
         }
 
         let Some(output) = self.weights.get(&self.graph.outputs[0]) else {
-            return Err(InfersError::Tensor("Output tensor is empty".to_string()));
+            bail!("output tensor is empty");
         };
 
         Ok(output.clone())
@@ -98,7 +98,7 @@ where
     /// # Arguments
     ///
     /// - `initializer`: A slice of `TensorProto` containing the initializer data.
-    fn load_weights(initializer: &[TensorProto]) -> InfersResult<HashMap<String, Tensor<B, f32>>> {
+    fn load_weights(initializer: &[TensorProto]) -> Result<HashMap<String, Tensor<B, f32>>> {
         let mut weights = HashMap::new();
 
         for init in initializer.iter() {
@@ -113,7 +113,7 @@ where
                 // The raw data is a sequence of bytes, each representing a float.
                 // If we want to convert it to a vector of f32, we need to
                 // get the bytes in chunks of 4 (4*8 = 32) and then convert them using little-endian.
-                let data: InfersResult<Vec<f32>> = data
+                let data: Result<Vec<f32>> = data
                     .as_chunks::<4>()
                     .0
                     .iter()
@@ -142,13 +142,11 @@ where
     ///
     /// - `node`: The graph node to evaluate.
     /// - `inputs`: The input tensors for the node operation.
-    fn evaluate_node(&self, node: &Node, inputs: Vec<Tensor<B>>) -> InfersResult<Tensor<B>> {
+    fn evaluate_node(&self, node: &Node, inputs: Vec<Tensor<B>>) -> Result<Tensor<B>> {
         match node.op_type {
             OpType::Add => {
                 if inputs.len() != 2 {
-                    return Err(InfersError::Operation(
-                        "Invalid number of inputs for Add operation".to_string(),
-                    ));
+                    bail!("invalid number of inputs for Add operation");
                 }
 
                 let lhs = &inputs[0];
@@ -158,9 +156,7 @@ where
             }
             OpType::Gemm => {
                 if inputs.len() > 3 || inputs.len() < 2 {
-                    return Err(InfersError::Operation(
-                        "Invalid number of inputs for Gemm operation".to_string(),
-                    ));
+                    bail!("invalid number of inputs for Gemm operation");
                 }
 
                 // Checks if an attribute with the given name is set to 1
@@ -202,9 +198,7 @@ where
             }
             OpType::Flatten => {
                 if inputs.is_empty() || inputs.len() != 1 {
-                    return Err(InfersError::Operation(
-                        "Invalid number of inputs for Flatten operation".to_string(),
-                    ));
+                    bail!("invalid number of inputs for Flatten operation");
                 }
 
                 let axis = match node.get_attribute("axis") {
@@ -218,14 +212,12 @@ where
             }
             OpType::Relu => {
                 if inputs.is_empty() || inputs.len() != 1 {
-                    return Err(InfersError::Operation(
-                        "Invalid number of inputs for Relu operation".to_string(),
-                    ));
+                    bail!("invalid number of inputs for Relu operation");
                 }
 
                 inputs[0].relu()
             }
-            _ => Err(InfersError::Operation("Invalid operation".to_string())),
+            _ => bail!("invalid operation {}", node.op_type),
         }
     }
 
