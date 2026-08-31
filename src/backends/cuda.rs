@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use cudarc::{
     driver::{CudaContext, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg},
     nvrtc::compile_ptx,
 };
 
 use crate::{
-    anyhow::Result,
     backends::{Backend, Device, GemmParams},
     tensor::{Layout, Shape},
 };
