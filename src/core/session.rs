@@ -125,7 +125,7 @@ where
 
                 weights.insert(
                     init.name().to_string(),
-                    Tensor::<B>::from_data(&data?, &dims)?,
+                    Tensor::<B>::from_data(&data?, dims)?,
                 );
             }
         }
@@ -154,7 +154,7 @@ where
                 let lhs = &inputs[0];
                 let rhs = &inputs[1];
 
-                Ok(lhs.add(rhs))
+                lhs.add(rhs)
             }
             OpType::Gemm => {
                 if inputs.len() > 3 || inputs.len() < 2 {
@@ -189,17 +189,14 @@ where
                 let lhs = &inputs[0];
                 let rhs = &inputs[1];
 
-                let mm = match (trans_a, trans_b) {
-                    (false, false) => lhs.gemm(rhs, alpha, beta),
-                    (false, true) => lhs.gemm(&rhs.t(), alpha, beta),
-                    (true, false) => lhs.t().gemm(rhs, alpha, beta),
-                    (true, true) => lhs.t().gemm(&rhs.t(), alpha, beta),
-                };
+                let lhs = if trans_a { lhs.t()? } else { lhs.clone() };
+                let rhs = if trans_b { rhs.t()? } else { rhs.clone() };
+                let mm = lhs.gemm(&rhs, alpha, beta)?;
 
                 // Add bias if it exists
                 let bias = inputs.get(2);
                 match bias {
-                    Some(b) => Ok(mm.add(b)),
+                    Some(b) => mm.add(b),
                     None => Ok(mm),
                 }
             }
@@ -210,8 +207,14 @@ where
                     ));
                 }
 
-                // SAFETY: We have already checked that the input is a single tensor
-                Ok(inputs[0].flatten())
+                let axis = match node.get_attribute("axis") {
+                    Some(attr) => match attr.value {
+                        AttributeValue::Int64(axis) if axis >= 0 => axis as usize,
+                        _ => 1,
+                    },
+                    None => 1,
+                };
+                inputs[0].flatten(axis)
             }
             OpType::Relu => {
                 if inputs.is_empty() || inputs.len() != 1 {
@@ -220,7 +223,7 @@ where
                     ));
                 }
 
-                Ok(inputs[0].relu())
+                inputs[0].relu()
             }
             _ => Err(InfersError::Operation("Invalid operation".to_string())),
         }
@@ -268,9 +271,9 @@ mod tests {
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
-        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.dims(), &[2, 2]);
         assert_eq!(tensor.size(), 4);
-        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.strides(), &[2, 1]);
         assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
         assert!(tensor.device() == Device::Cpu);
     }
@@ -295,9 +298,9 @@ mod tests {
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
-        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.dims(), &[2, 2]);
         assert_eq!(tensor.size(), 4);
-        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.strides(), &[2, 1]);
         assert_eq!(tensor.data().unwrap(), orig);
         assert!(tensor.device() == Device::Cpu);
     }
@@ -316,9 +319,9 @@ mod tests {
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
-        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.dims(), &[2, 2]);
         assert_eq!(tensor.size(), 4);
-        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.strides(), &[2, 1]);
         assert_eq!(tensor.data().unwrap(), vec![1., 2., 3., 4.]);
         assert!(tensor.device() == Device::Cuda);
     }
@@ -344,9 +347,9 @@ mod tests {
 
         assert_eq!(weights.len(), 1);
         let tensor = &weights["tensor"];
-        assert_eq!(tensor.shape(), &[2, 2]);
+        assert_eq!(tensor.dims(), &[2, 2]);
         assert_eq!(tensor.size(), 4);
-        assert_eq!(tensor.strides, &[2, 1]);
+        assert_eq!(tensor.strides(), &[2, 1]);
         assert_eq!(tensor.data().unwrap(), orig);
         assert_eq!(tensor.device(), Device::Cuda);
     }

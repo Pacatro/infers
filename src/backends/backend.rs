@@ -1,43 +1,27 @@
 use std::fmt::{Debug, Display};
 
-use crate::core::InfersResult;
+use crate::{
+    core::InfersResult,
+    tensor::{Layout, Shape},
+};
 
-/// Parameters for General Matrix Multiply (GEMM) operations.
-///
-/// This struct encapsulates all the parameters needed for a GEMM operation,
-/// making the function signature cleaner and more maintainable.
 #[derive(Debug, Clone)]
 pub struct GemmParams<'a, T, S> {
-    /// The left-hand side matrix (A) with dimensions m×k.
     pub lhs: &'a S,
-    /// The right-hand side matrix (B) with dimensions k×n.
+    pub lhs_layout: &'a Layout,
     pub rhs: &'a S,
-    /// Strides for the left-hand side matrix.
-    pub lhs_strides: Vec<usize>,
-    /// Strides for the right-hand side matrix.
-    pub rhs_strides: Vec<usize>,
-    /// Scalar multiplier for the matrix product.
+    pub rhs_layout: &'a Layout,
     pub alpha: T,
-    /// Scalar multiplier for the existing matrix C.
     pub beta: T,
-    /// Number of rows in matrices A and C.
     pub m: usize,
-    /// Number of columns in matrices B and C.
     pub n: usize,
-    /// Number of columns in matrix A and rows in matrix B.
     pub k: usize,
 }
 
-/// Represents the physical device where the computation and storage will occur.
-///
-/// This enum allows the system to differentiate between standard CPU processing
-/// and acceleration devices like CUDA-enabled GPUs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Device {
-    /// Standard Central Processing Unit.
     #[default]
     Cpu,
-    /// NVIDIA GPU using the CUDA framework.
     #[cfg(feature = "cuda")]
     Cuda,
 }
@@ -52,176 +36,55 @@ impl Display for Device {
     }
 }
 
-/// A trait defining the required interface for a computation and storage backend
-/// on a specific device (e.g., CPU, GPU).
-///
-/// This trait abstracts the low-level memory management and device-specific
-/// operations, allowing the rest of the framework to interact with data in a
-/// device-agnostic manner.
-///
-/// The generic parameter `T` represents the element type stored by the backend
-/// (e.g., f32, i32).
-#[allow(dead_code)]
+/// Storage and computation primitives for a physical device.
 pub trait Backend<T = f32>: Clone + Debug + Copy {
-    /// The device-specific memory storage type.
-    ///
-    /// This might be a `Vec<T>` for the CPU backend, or a GPU buffer type
-    /// (like a CUDA pointer or buffer wrapper) for a GPU backend.
     type Storage: Clone + Debug;
 
-    /// Returns the specific device associated with this backend implementation.
-    ///
-    /// # Returns
-    ///
-    /// A `Device` enum variant corresponding to the backend (e.g., `Device::Cpu`).
     fn device() -> Device;
 
-    /// Initializes the device-specific storage from a slice of host data.
-    ///
-    /// This involves allocating memory on the target device and copying the
-    /// initial data from the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `data`: A slice of data (`&[T]`) residing on the host (CPU).
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the initialized `Self::Storage` on success, or an error.
-    fn init(data: &[T]) -> InfersResult<Self::Storage>;
+    fn from_host(data: Vec<T>) -> InfersResult<Self::Storage>;
 
-    /// Reads a single element from the device storage at a given idx.
-    ///
-    /// This operation might involve a slow device-to-host synchronization/transfer
-    /// for GPU backends. It should primarily be used for debugging or small reads.
-    ///
-    /// # Arguments
-    ///
-    /// * `storage`: A reference to the device storage.
-    /// * `idx`: The zero-based index of the element to read.
-    ///
-    /// # Returns
-    ///
-    /// The value of the element at `idx`.
-    fn read(storage: &Self::Storage, idx: usize) -> T;
+    fn read(storage: &Self::Storage, index: usize) -> InfersResult<T>;
 
-    /// Writes a single element to the device storage at a given index.
-    ///
-    /// Similar to `read`, this operation might be slow for GPU backends as it
-    /// involves host-to-device communication.
-    ///
-    /// # Arguments
-    ///
-    /// * `storage`: A mutable reference to the device storage.
-    /// * `idx`: The zero-based index where the value should be written.
-    /// * `value`: The new value of type `T`.
-    fn write(storage: &mut Self::Storage, idx: usize, value: T);
+    /// Materializes the logical tensor represented by `layout` on the host.
+    fn to_host(storage: &Self::Storage, layout: &Layout) -> InfersResult<Vec<T>>;
 
-    /// Copies the entire contents of the device storage back to a host (CPU) `Vec<T>`.
-    ///
-    /// This is typically a synchronization point where data is transferred from
-    /// the device memory back to the CPU memory.
-    ///
-    /// # Arguments
-    ///
-    /// * `storage`: A reference to the device storage.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a `Vec<T>` of the copied data on success, or an error.
-    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<T>>;
+    fn contiguous(storage: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage> {
+        Self::from_host(Self::to_host(storage, layout)?)
+    }
 
-    /// Performs an element-wise addition of two device storage blocks.
-    ///
-    /// The result is stored in a newly allocated device storage block. This operation
-    /// should be optimized to run entirely on the target device (e.g., using CUDA kernels
-    /// for a GPU backend).
-    ///
-    /// # Arguments
-    ///
-    /// * `lhs`: The left-hand side operand storage.
-    /// * `rhs`: The right-hand side operand storage.
-    /// * `size`: The number of elements in the storage
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the result of `lhs + rhs`.
-    fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+    fn add(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage>;
 
-    /// Performs an element-wise subtraction of two device storage blocks.
-    ///
-    /// The result is stored in a newly allocated device storage block. This operation
-    /// should be optimized to run entirely on the target device (e.g., using CUDA kernels
-    /// for a GPU backend).
-    ///
-    /// # Arguments
-    ///
-    /// * `lhs`: The left-hand side operand storage.
-    /// * `rhs`: The right-hand side operand storage.
-    /// * `size`: The number of elements in the storage
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the result of `lhs - rhs`.
-    fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+    fn sub(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage>;
 
-    /// Performs an element-wise multiplication of two device storage blocks.
-    ///
-    /// The result is stored in a newly allocated device storage block. This operation
-    /// should be optimized to run entirely on the target device (e.g., using CUDA kernels
-    /// for a GPU backend).
-    ///
-    /// # Arguments
-    ///
-    /// * `lhs`: The left-hand side operand storage.
-    /// * `rhs`: The right-hand side operand storage.
-    /// * `size`: The number of elements in the storage
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the result of `lhs * rhs`.
-    fn mul(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+    fn mul(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage>;
 
-    /// Applies the ReLU (Rectified Linear Unit) activation function to the input storage.
-    ///
-    /// ReLU sets all negative values to zero and leaves positive values unchanged.
-    /// This operation should be optimized to run entirely on the target device.
-    ///
-    /// # Arguments
-    ///
-    /// * `input`: The input storage to apply ReLU to.
-    /// * `size`: The number of elements in the storage.
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the result of applying ReLU to `input`.
-    fn relu(input: &Self::Storage, size: usize) -> Self::Storage;
+    fn relu(input: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage>;
 
-    /// Performs a General Matrix Multiply (GEMM) operation.
-    ///
-    /// Computes the matrix multiplication: C = alpha * A * B + beta * C
-    /// where A is an m×k matrix, B is a k×n matrix, and C is an m×n matrix.
-    /// This operation should be optimized to run entirely on the target device.
-    ///
-    /// # Arguments
-    ///
-    /// * `params`: A `GemmParams` struct containing all GEMM operation parameters.
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the result matrix C.
-    fn gemm(params: GemmParams<T, Self::Storage>) -> Self::Storage;
+    fn gemm(params: GemmParams<T, Self::Storage>) -> InfersResult<Self::Storage>;
 
-    /// Computes the dot product of two storage blocks.
-    ///
-    /// # Arguments
-    ///
-    /// * `lhs`: The left-hand side operand storage.
-    /// * `rhs`: The right-hand side operand storage.
-    /// * `size`: The number of elements in the storage.
-    ///
-    /// # Returns
-    ///
-    /// A new `Self::Storage` containing the scalar dot product result.
-    fn dot(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage;
+    fn dot(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+    ) -> InfersResult<Self::Storage>;
 }

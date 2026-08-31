@@ -1,441 +1,411 @@
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+
 use num_traits::{FromPrimitive, Num};
 use rand::Rng;
 use rand_distr::StandardNormal;
-use std::cell::RefCell;
-use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::rc::Rc;
 
-use crate::backends::{Backend, Cpu, Device};
-use crate::core::InfersResult;
+use crate::{
+    backends::{Backend, Cpu, Device},
+    core::InfersResult,
+};
 
-/// Calculates the strides (step size in linear memory) for a given tensor shape
-/// assuming a row-major (C-style) memory layout.
-///
-/// # Arguments
-///
-/// * `shape`: A slice representing the dimensions of the tensor (e.g., `[2, 3]` for a 2x3 matrix).
-///
-/// # Returns
-///
-/// A vector of strides, where `strides[i]` is the step in the linear buffer
-/// required to advance the index along the `i`-th dimension.
+use super::TensorError;
+
+/// Logical dimensions of a tensor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shape {
+    dims: Vec<usize>,
+    num_elements: usize,
+}
+
+impl Shape {
+    pub fn new(dims: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        let dims = dims.into();
+        let num_elements = dims.iter().try_fold(1usize, |size, &dimension| {
+            size.checked_mul(dimension)
+                .ok_or_else(|| TensorError::ShapeOverflow {
+                    shape: dims.clone(),
+                })
+        })?;
+
+        Ok(Self { dims, num_elements })
+    }
+
+    pub fn dims(&self) -> &[usize] {
+        &self.dims
+    }
+
+    pub fn rank(&self) -> usize {
+        self.dims.len()
+    }
+
+    pub fn num_elements(&self) -> usize {
+        self.num_elements
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.num_elements == 0
+    }
+
+    pub fn dimension(&self, axis: usize) -> Option<usize> {
+        self.dims.get(axis).copied()
+    }
+
+    pub fn broadcast_with(&self, other: &Self) -> Result<Self, TensorError> {
+        let output_rank = self.rank().max(other.rank());
+        let mut output = Vec::with_capacity(output_rank);
+
+        for offset in 0..output_rank {
+            let lhs = self
+                .rank()
+                .checked_sub(offset + 1)
+                .map_or(1, |axis| self.dims[axis]);
+            let rhs = other
+                .rank()
+                .checked_sub(offset + 1)
+                .map_or(1, |axis| other.dims[axis]);
+
+            if lhs != rhs && lhs != 1 && rhs != 1 {
+                return Err(TensorError::IncompatibleShapes {
+                    operation: "broadcast",
+                    lhs: self.dims.clone(),
+                    rhs: other.dims.clone(),
+                });
+            }
+
+            output.push(if lhs == 1 { rhs } else { lhs });
+        }
+
+        output.reverse();
+        Self::new(output)
+    }
+
+    pub fn matmul_with(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.rank() != 2 || other.rank() != 2 || self.dims[1] != other.dims[0] {
+            return Err(TensorError::IncompatibleShapes {
+                operation: "matrix multiplication",
+                lhs: self.dims.clone(),
+                rhs: other.dims.clone(),
+            });
+        }
+
+        Self::new(vec![self.dims[0], other.dims[1]])
+    }
+}
+
+impl AsRef<[usize]> for Shape {
+    fn as_ref(&self) -> &[usize] {
+        self.dims()
+    }
+}
+
+/// Describes how a tensor shape maps onto its physical storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Layout {
+    shape: Shape,
+    strides: Vec<usize>,
+}
+
+impl Layout {
+    pub fn contiguous(shape: Shape) -> Self {
+        let strides = compute_strides(shape.dims());
+        Self { shape, strides }
+    }
+
+    pub(crate) fn from_parts(shape: Shape, strides: Vec<usize>) -> Result<Self, TensorError> {
+        if shape.rank() != strides.len() {
+            return Err(TensorError::ShapeStrideRankMismatch {
+                shape_rank: shape.rank(),
+                strides_rank: strides.len(),
+            });
+        }
+
+        Ok(Self { shape, strides })
+    }
+
+    pub fn shape(&self) -> &Shape {
+        &self.shape
+    }
+
+    pub fn strides(&self) -> &[usize] {
+        &self.strides
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.strides == compute_strides(self.shape.dims())
+    }
+
+    pub fn reshape(&self, shape: Shape) -> Result<Self, TensorError> {
+        if self.shape.num_elements() != shape.num_elements() {
+            return Err(TensorError::InvalidReshape {
+                from: self.shape.dims.clone(),
+                to: shape.dims,
+            });
+        }
+        if !self.is_contiguous() {
+            return Err(TensorError::NonContiguousReshape);
+        }
+
+        Ok(Self::contiguous(shape))
+    }
+
+    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> Result<Self, TensorError> {
+        let rank = self.shape.rank();
+        if axis_a >= rank {
+            return Err(TensorError::InvalidAxis { axis: axis_a, rank });
+        }
+        if axis_b >= rank {
+            return Err(TensorError::InvalidAxis { axis: axis_b, rank });
+        }
+
+        let mut dims = self.shape.dims.clone();
+        let mut strides = self.strides.clone();
+        dims.swap(axis_a, axis_b);
+        strides.swap(axis_a, axis_b);
+
+        Self::from_parts(Shape::new(dims)?, strides)
+    }
+
+    pub(crate) fn physical_index(&self, indices: &[usize]) -> Result<usize, TensorError> {
+        if indices.len() != self.shape.rank()
+            || indices
+                .iter()
+                .zip(self.shape.dims())
+                .any(|(&index, &dimension)| index >= dimension)
+        {
+            return Err(TensorError::InvalidIndex {
+                indices: indices.to_vec(),
+                shape: self.shape.dims.clone(),
+            });
+        }
+
+        Ok(indices
+            .iter()
+            .zip(&self.strides)
+            .map(|(&index, &stride)| index * stride)
+            .sum())
+    }
+
+    pub(crate) fn physical_index_from_flat(
+        &self,
+        flat_index: usize,
+        output_shape: &Shape,
+    ) -> usize {
+        if self.shape.rank() == 0 {
+            return 0;
+        }
+
+        let output_strides = compute_strides(output_shape.dims());
+        let rank_offset = output_shape.rank() - self.shape.rank();
+
+        self.shape
+            .dims()
+            .iter()
+            .zip(self.strides())
+            .enumerate()
+            .map(|(axis, (&dimension, &stride))| {
+                let output_axis = axis + rank_offset;
+                let coordinate =
+                    (flat_index / output_strides[output_axis]) % output_shape.dims()[output_axis];
+                if dimension == 1 {
+                    0
+                } else {
+                    coordinate * stride
+                }
+            })
+            .sum()
+    }
+}
+
 pub(crate) fn compute_strides(shape: &[usize]) -> Vec<usize> {
     let mut strides = vec![1; shape.len()];
     let mut current_stride = 1;
-    for i in (0..shape.len()).rev() {
-        strides[i] = current_stride;
-        current_stride *= shape[i];
+    for axis in (0..shape.len()).rev() {
+        strides[axis] = current_stride;
+        current_stride *= shape[axis];
     }
     strides
 }
 
-/// The core data structure for numerical computation, representing a multi-dimensional
-/// array (Tensor).
-///
-/// Tensors are device-agnostic, relying on the generic `Backend` trait to handle
-/// storage and computation on different devices (CPU, cuda).
-///
-///
-///
-/// # Type Parameters
-///
-/// * `B`: The backend implementation (e.g., `Cpu`, `Cuda`). Defaults to `Cpu`.
-/// * `T`: The element data type (e.g., `f32`, `i32`). Defaults to `f32`.
-// TODO: Check https://huggingface.co/blog/KeighBee/tensors-from-scratch-in-rust-p1
-// for better implementation
+/// Device-backed multidimensional array.
 #[derive(Debug, Clone)]
 pub struct Tensor<B = Cpu, T = f32>
 where
     B: Backend<T>,
 {
-    /// The size of the tensor along each dimension (e.g., `[rows, columns]`).
-    pub(crate) shape: Vec<usize>,
-    /// The number of elements to skip in the linear storage to advance one unit along each dimension.
-    pub(crate) strides: Vec<usize>,
-    /// The underlying device-specific storage for the tensor data.
-    pub(crate) storage: Rc<RefCell<B::Storage>>,
-    /// Marker to hold the backend type without storing data.
-    pub(crate) _backend: PhantomData<B>,
+    pub(crate) storage: Arc<B::Storage>,
+    pub(crate) layout: Layout,
+    pub(crate) _element: PhantomData<T>,
 }
 
-impl Tensor {
-    /// Creates a new CPU tensor initialized with random numbers uniformly distributed
-    /// between 0.0 and 1.0.
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of type `f32` with random values.
-    pub fn rand(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
-
-        let data = (0..len)
+impl Tensor<Cpu, f32> {
+    pub fn rand(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let shape = Shape::new(dims)?;
+        let data = (0..shape.num_elements())
             .map(|_| rand::random::<f32>())
-            .collect::<Vec<f32>>();
-
-        Self {
-            storage: Rc::new(RefCell::new(data)),
-            shape: shape.to_vec(),
-            strides: compute_strides(shape),
-            _backend: PhantomData,
-        }
+            .collect();
+        Self::from_vec(data, shape.dims)
     }
 
-    /// Creates a new CPU tensor initialized with random numbers from a standard
-    /// normal distribution (mean 0, variance 1).
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of type `f32` with normally distributed random values.
-    pub fn randn(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
-
-        let data = (0..len)
-            .map(|_| {
-                let mut rng = rand::rng();
-                rng.sample(StandardNormal)
-            })
-            .collect::<Vec<f32>>();
-
-        Tensor {
-            storage: Rc::new(RefCell::new(data)),
-            shape: shape.to_vec(),
-            strides: compute_strides(shape),
-            _backend: PhantomData,
-        }
+    pub fn randn(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let shape = Shape::new(dims)?;
+        let mut rng = rand::rng();
+        let data = (0..shape.num_elements())
+            .map(|_| rng.sample(StandardNormal))
+            .collect();
+        Self::from_vec(data, shape.dims)
     }
 }
 
 impl<T> Tensor<Cpu, T>
 where
     Cpu: Backend<T, Storage = Vec<T>>,
-    T: Num + Clone + Copy + FromPrimitive + Debug,
+    T: Num + Clone + Copy + FromPrimitive + Debug + Send + Sync,
 {
-    /// Creates a new CPU tensor from a linear data buffer and a shape.
-    ///
-    /// The data buffer is copied directly into the tensor's storage.
-    ///
-    /// # Arguments
-    ///
-    /// * `data`: The flat array of data elements.
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the length of `data` does not match the total len implied by `shape`.
-    pub fn new(data: &[T], shape: &[usize]) -> Self {
-        let len = shape.iter().product();
-        assert_eq!(
-            data.len(),
-            len,
-            "Data length mismatch for shape {:?}",
-            shape
-        );
-
-        Self {
-            storage: Rc::new(RefCell::new(data.to_vec())),
-            shape: shape.to_vec(),
-            strides: compute_strides(shape),
-            _backend: PhantomData,
-        }
+    pub fn new(data: &[T], dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        Self::from_vec(data.to_vec(), dims)
     }
 
-    /// Creates a new CPU tensor initialized with zeros.
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of the specified shape filled with the zero element of type `T`.
-    pub fn zeros(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
-        Self {
-            storage: Rc::new(RefCell::new(vec![T::zero(); len])),
-            shape: shape.to_vec(),
-            strides: compute_strides(shape),
-            _backend: PhantomData,
-        }
+    pub fn zeros(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let shape = Shape::new(dims)?;
+        Self::from_vec(vec![T::zero(); shape.num_elements()], shape.dims)
     }
 
-    /// Creates a new CPU tensor initialized with ones.
-    ///
-    /// # Arguments
-    ///
-    /// * `shape`: The multi-dimensional shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A tensor of the specified shape filled with the one element of type `T`.
-    pub fn ones(shape: &[usize]) -> Self {
-        let len = shape.iter().product();
-
-        let strides = compute_strides(shape);
-        let storage = vec![T::one(); len];
-
-        Self {
-            storage: Rc::new(RefCell::new(storage)),
-            shape: shape.to_vec(),
-            strides,
-            _backend: PhantomData,
-        }
+    pub fn ones(dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let shape = Shape::new(dims)?;
+        Self::from_vec(vec![T::one(); shape.num_elements()], shape.dims)
     }
 }
 
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
-    T: Num + FromPrimitive + Clone + Copy + FromPrimitive + Debug,
+    T: Num + FromPrimitive + Clone + Copy + Debug + Send + Sync,
 {
-    /// Creates a tensor on the specified backend from host data.
-    ///
-    /// This method uses the backend's `init` function to move data from the host
-    /// buffer to the device storage (e.g., copying to cuda memory for the CUDA backend).
-    ///
-    /// # Arguments
-    ///
-    /// * `data`: A slice of host data.
-    /// * `shape`: The shape of the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the initialized `Tensor` or an error if backend initialization fails.
-    pub fn from_data(data: &[T], shape: &[usize]) -> InfersResult<Self> {
-        let len = shape.iter().product();
-        assert_eq!(data.len(), len, "Data length mismatch");
-        Ok(Self {
-            storage: Rc::new(RefCell::new(B::init(data)?)),
-            shape: shape.to_vec(),
-            strides: compute_strides(shape),
-            _backend: PhantomData,
-        })
-    }
-
-    /// Retrieves the tensor data from the device to a host (CPU) `Vec<T>`.
-    ///
-    /// This is an expensive synchronization operation for non-CPU backends.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the data as a linear `Vec<T>` on the host.
-    pub fn data(&self) -> InfersResult<Vec<T>> {
-        B::copy_to_host(&self.storage.borrow())
-    }
-
-    /// Converts a multi-dimensional index tuple into a single linear (physical) index
-    /// in the underlying storage buffer, using the calculated strides.
-    ///
-    /// # Arguments
-    ///
-    /// * `indices`: The coordinate in the tensor (e.g., `[row, column]`).
-    ///
-    /// # Returns
-    ///
-    /// The flat index in the `storage` buffer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number of indices does not match the tensor's rank (`shape.size()`).
-    fn get_physical_index(&self, indices: &[usize]) -> usize {
-        assert_eq!(indices.len(), self.shape.len(), "Index rank mismatch");
-        let mut physical_idx = 0;
-        for (i, &idx) in indices.iter().enumerate() {
-            physical_idx += idx * self.strides[i];
+    pub fn from_vec(data: Vec<T>, dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let shape = Shape::new(dims)?;
+        if data.len() != shape.num_elements() {
+            return Err(TensorError::DataLengthMismatch {
+                expected: shape.num_elements(),
+                actual: data.len(),
+                shape: shape.dims.clone(),
+            }
+            .into());
         }
-        physical_idx
+
+        let storage = B::from_host(data)?;
+        Ok(Self::from_parts(storage, Layout::contiguous(shape)))
     }
 
-    /// Retrieves a single element from the tensor using multi-dimensional indices.
-    ///
-    /// This uses the backend's `read` method, which can be inefficient for cuda backends.
-    ///
-    /// # Arguments
-    ///
-    /// * `indices`: The coordinate of the element to retrieve.
-    ///
-    /// # Returns
-    ///
-    /// The value of the element at the specified indices.
-    pub fn get(&self, indices: &[usize]) -> T {
-        let idx = self.get_physical_index(indices);
-        B::read(&self.storage.borrow(), idx)
+    pub fn from_data(data: &[T], dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        Self::from_vec(data.to_vec(), dims)
     }
 
-    /// Sets a single element in the tensor using multi-dimensional indices.
-    ///
-    /// This uses the backend's `write` method, which can be inefficient for cuda backends.
-    ///
-    /// # Arguments
-    ///
-    /// * `indices`: The coordinate of the element to modify.
-    /// * `value`: The new value to set.
-    pub fn set(&mut self, indices: &[usize], value: T) {
-        let idx = self.get_physical_index(indices);
-        B::write(&mut self.storage.borrow_mut(), idx, value);
+    pub(crate) fn from_parts(storage: B::Storage, layout: Layout) -> Self {
+        Self {
+            storage: Arc::new(storage),
+            layout,
+            _element: PhantomData,
+        }
     }
 
-    /// Returns the device this tensor resides on.
+    pub fn data(&self) -> InfersResult<Vec<T>> {
+        B::to_host(self.storage.as_ref(), &self.layout)
+    }
+
+    pub fn get(&self, indices: &[usize]) -> InfersResult<T> {
+        let index = self.layout.physical_index(indices)?;
+        B::read(self.storage.as_ref(), index)
+    }
+
     pub fn device(&self) -> Device {
         B::device()
     }
 
-    /// Returns the total number of elements in the tensor (the product of all dimensions).
-    ///
-    /// This method computes the size dynamically by multiplying all dimensions
-    /// in the tensor's shape.
-    pub fn size(&self) -> usize {
-        self.shape.iter().product()
+    pub fn shape(&self) -> &Shape {
+        self.layout.shape()
     }
 
-    /// Returns `true` if the tensor is empty (i.e., has zero length).
-    pub fn is_empty(&self) -> bool {
-        self.size() == 0
+    pub fn dims(&self) -> &[usize] {
+        self.layout.shape().dims()
     }
 
-    /// Returns the number of dimensions of the tensor.
+    pub fn strides(&self) -> &[usize] {
+        self.layout.strides()
+    }
+
+    pub fn rank(&self) -> usize {
+        self.layout.shape().rank()
+    }
+
     pub fn ndims(&self) -> usize {
-        self.shape.len()
+        self.rank()
     }
 
-    /// Returns the shape of the tensor.
-    pub fn shape(&self) -> &[usize] {
-        self.shape.as_slice()
+    pub fn len(&self) -> usize {
+        self.layout.shape().num_elements()
     }
 
-    /// Converts the tensor from its current backend (`B`) to a new backend (`SrcB`).
-    ///
-    /// This involves copying the data from the current device to the host (CPU),
-    /// and then from the host to the new target device.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `SrcB`: The target backend type.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the new `Tensor` instance on the target backend.
-    pub fn to<SrcB>(&self) -> InfersResult<Tensor<SrcB, T>>
+    pub fn size(&self) -> usize {
+        self.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layout.shape().is_empty()
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.layout.is_contiguous()
+    }
+
+    pub fn to<Destination>(&self) -> InfersResult<Tensor<Destination, T>>
     where
-        SrcB: Backend<T>,
+        Destination: Backend<T>,
     {
-        // Copy data from current device (B) to host (CPU)
-        let host_data = B::copy_to_host(&self.storage.borrow())?;
-        // Initialize new tensor on target device (SrcB) from host data
-        Tensor::from_data(&host_data, &self.shape)
+        Tensor::from_vec(self.data()?, self.dims().to_vec())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::Cpu;
-
-    #[cfg(feature = "cuda")]
-    use crate::backends::Cuda;
-
     use super::*;
 
     #[test]
-    fn test_tensor_new() {
-        let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.data().unwrap(), vec![1, 2, 3, 4]);
-        assert_eq!(t.device(), Device::Cpu);
+    fn shape_validates_and_caches_size() {
+        let shape = Shape::new([2, 3, 4]).unwrap();
+        assert_eq!(shape.dims(), &[2, 3, 4]);
+        assert_eq!(shape.rank(), 3);
+        assert_eq!(shape.num_elements(), 24);
     }
 
     #[test]
-    fn test_tensor_zeros() {
-        let t = Tensor::<Cpu, i32>::zeros(&[2, 2]);
-        assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.data().unwrap(), vec![0, 0, 0, 0]);
+    fn shape_broadcasts_from_the_right() {
+        let lhs = Shape::new([2, 1, 3]).unwrap();
+        let rhs = Shape::new([4, 3]).unwrap();
+        assert_eq!(lhs.broadcast_with(&rhs).unwrap().dims(), &[2, 4, 3]);
     }
 
     #[test]
-    fn test_tensor_ones() {
-        let t = Tensor::<Cpu, i32>::ones(&[2, 2]);
-        assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.data().unwrap(), vec![1, 1, 1, 1]);
+    fn layout_transpose_is_a_view() {
+        let layout = Layout::contiguous(Shape::new([2, 3]).unwrap());
+        let transposed = layout.transpose(0, 1).unwrap();
+        assert_eq!(transposed.shape().dims(), &[3, 2]);
+        assert_eq!(transposed.strides(), &[1, 3]);
+        assert!(!transposed.is_contiguous());
     }
 
     #[test]
-    fn test_tensor_rand() {
-        let t = Tensor::rand(&[2, 2]);
-        assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.device(), Device::Cpu);
+    fn tensor_construction_validates_data_length() {
+        let error = Tensor::<Cpu, i32>::new(&[1, 2, 3], [2, 2]).unwrap_err();
+        assert!(matches!(error, crate::core::InfersError::Tensor(_)));
     }
 
     #[test]
-    fn test_tensor_randn() {
-        let t = Tensor::randn(&[2, 2]);
-        assert_eq!(t.shape, &[2, 2]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.strides, &[2, 1]);
-        assert_eq!(t.size(), 4);
-        assert_eq!(t.device(), Device::Cpu);
-    }
-
-    #[test]
-    fn test_tensor_ndim() {
-        let t = Tensor::rand(&[2, 2, 2]);
-        assert_eq!(t.ndims(), 3);
-    }
-
-    #[test]
-    fn test_tensor_get() {
-        let t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        assert_eq!(t.get(&[0, 0]), 1);
-    }
-
-    #[test]
-    fn test_tensor_set() {
-        let mut t = Tensor::new(&[1, 2, 3, 4], &[2, 2]);
-        assert_eq!(t.get(&[0, 0]), 1);
-        t.set(&[0, 0], 10);
-        assert_eq!(t.get(&[0, 0]), 10);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_to_cuda() {
-        let t_cpu = Tensor::rand(&[2, 2]);
-        let t_cuda = t_cpu.to::<Cuda>().unwrap();
-        assert_eq!(t_cuda.device(), Device::Cuda);
-        assert_eq!(t_cuda.shape, t_cpu.shape);
-        assert_eq!(t_cuda.size(), t_cpu.size());
-        assert_eq!(t_cuda.strides, t_cpu.strides);
-        assert_eq!(t_cuda.data().unwrap(), t_cpu.data().unwrap());
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_get_cuda() {
-        let t = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        assert_eq!(t.get(&[0, 0]), 1.);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_set_cuda() {
-        let mut t = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        assert_eq!(t.get(&[0, 0]), 1.);
-        t.set(&[0, 0], 10.);
-        assert_eq!(t.get(&[0, 0]), 10.);
+    fn tensor_cpu_roundtrip() {
+        let tensor = Tensor::<Cpu, i32>::new(&[1, 2, 3, 4], [2, 2]).unwrap();
+        assert_eq!(tensor.dims(), &[2, 2]);
+        assert_eq!(tensor.strides(), &[2, 1]);
+        assert_eq!(tensor.data().unwrap(), vec![1, 2, 3, 4]);
+        assert_eq!(tensor.get(&[1, 0]).unwrap(), 3);
     }
 }

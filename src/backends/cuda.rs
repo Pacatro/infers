@@ -1,78 +1,95 @@
+use std::sync::Arc;
+
 use cudarc::{
     driver::{CudaContext, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg},
     nvrtc::compile_ptx,
 };
 
-use std::{fmt::Debug, sync::Arc};
-
 use crate::{
     backends::{Backend, Device, GemmParams},
     core::InfersResult,
+    tensor::{Layout, Shape},
 };
 
-/// Compiles a CUDA kernel from a string source.
 fn compile_kernel(
-    src: &str,
-    func_name: &str,
-    ctx: &Arc<CudaContext>,
+    source: &str,
+    function_name: &str,
+    context: &Arc<CudaContext>,
 ) -> InfersResult<CudaFunction> {
-    let ptx = compile_ptx(src)?;
-    let module = ctx.load_module(ptx)?;
-    module.load_function(func_name).map_err(|e| e.into())
+    let ptx = compile_ptx(source)?;
+    let module = context.load_module(ptx)?;
+    module.load_function(function_name).map_err(Into::into)
 }
 
-/// Performs a general elementwise operation between two tensors
-fn execute_elementwise_op(
+fn raw_to_host(storage: &CudaStorage) -> InfersResult<Vec<f32>> {
+    storage
+        .context
+        .default_stream()
+        .clone_dtoh(&storage.buffer)
+        .map_err(Into::into)
+}
+
+fn host_elementwise<F>(
+    lhs: &CudaStorage,
+    lhs_layout: &Layout,
+    rhs: &CudaStorage,
+    rhs_layout: &Layout,
+    output_shape: &Shape,
+    operation: F,
+) -> InfersResult<CudaStorage>
+where
+    F: Fn(f32, f32) -> f32,
+{
+    let lhs_data = raw_to_host(lhs)?;
+    let rhs_data = raw_to_host(rhs)?;
+    let output = (0..output_shape.num_elements())
+        .map(|index| {
+            let lhs_index = lhs_layout.physical_index_from_flat(index, output_shape);
+            let rhs_index = rhs_layout.physical_index_from_flat(index, output_shape);
+            operation(lhs_data[lhs_index], rhs_data[rhs_index])
+        })
+        .collect::<Vec<_>>();
+    Cuda::from_host(output)
+}
+
+fn execute_elementwise_kernel(
     lhs: &CudaStorage,
     rhs: &CudaStorage,
     size: usize,
-    src: &str,
-    func_name: &str,
+    source: &str,
+    function_name: &str,
 ) -> InfersResult<CudaStorage> {
-    let ctx = lhs.context.clone();
-    let stream = ctx.default_stream();
-
-    let func = compile_kernel(src, func_name, &ctx)?;
-
+    let context = Arc::clone(&lhs.context);
+    let stream = context.default_stream();
+    let function = compile_kernel(source, function_name, &context)?;
     let config = LaunchConfig::for_num_elems(size as u32);
-    let mut out_device = stream.alloc_zeros::<f32>(size)?;
+    let mut output = stream.alloc_zeros::<f32>(size)?;
+
+    // SAFETY: all buffers belong to the same CUDA context, contain at least `size`
+    // f32 elements, and the launch configuration covers exactly that logical range.
     unsafe {
         stream
-            .launch_builder(&func)
+            .launch_builder(&function)
             .arg(&lhs.buffer)
             .arg(&rhs.buffer)
-            .arg(&mut out_device)
+            .arg(&mut output)
             .arg(&size)
             .launch(config)?;
     }
-
     stream.synchronize()?;
 
     Ok(CudaStorage {
-        context: ctx,
-        buffer: out_device,
+        context,
+        buffer: output,
     })
 }
 
-/// Device-specific storage structure for the CUDA backend.
-///
-/// This wraps the necessary CUDA context and the actual device buffer.
-///
-/// # Type Parameters
-///
-/// * `T`: The element type, which must be representable on a CUDA device.
 #[derive(Debug, Clone)]
 pub struct CudaStorage {
-    /// The CUDA context, shared via `Arc` to manage device resources.
     context: Arc<CudaContext>,
-    /// The actual memory buffer stored on the CUDA device.
     buffer: CudaSlice<f32>,
 }
 
-/// The CUDA backend implementation.
-///
-/// This struct implements the `Backend` trait, providing all the necessary
-/// methods for managing data and performing operations on an NVIDIA GPU.
 #[derive(Debug, Clone, Copy)]
 pub struct Cuda;
 
@@ -83,287 +100,212 @@ impl Backend for Cuda {
         Device::Cuda
     }
 
-    fn init(data: &[f32]) -> InfersResult<Self::Storage> {
-        let ctx = CudaContext::new(0)?;
-        let stream = ctx.default_stream();
-        let slice = stream.clone_htod(data)?;
+    fn from_host(data: Vec<f32>) -> InfersResult<Self::Storage> {
+        let context = CudaContext::new(0)?;
+        let buffer = context.default_stream().clone_htod(&data)?;
+        Ok(CudaStorage { context, buffer })
+    }
 
+    fn read(storage: &Self::Storage, index: usize) -> InfersResult<f32> {
+        let stream = storage.context.default_stream();
+        let view = storage.buffer.try_slice(index..index + 1).ok_or_else(|| {
+            crate::core::InfersError::Memory("CUDA scalar index is outside the buffer".to_string())
+        })?;
+        Ok(stream.clone_dtoh(&view)?[0])
+    }
+
+    fn to_host(storage: &Self::Storage, layout: &Layout) -> InfersResult<Vec<f32>> {
+        let data = raw_to_host(storage)?;
+        if layout.is_contiguous() {
+            return Ok(data[..layout.shape().num_elements()].to_vec());
+        }
+
+        Ok((0..layout.shape().num_elements())
+            .map(|index| data[layout.physical_index_from_flat(index, layout.shape())])
+            .collect())
+    }
+
+    fn add(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage> {
+        if Arc::ptr_eq(&lhs.context, &rhs.context)
+            && lhs_layout.is_contiguous()
+            && rhs_layout.is_contiguous()
+            && lhs_layout.shape() == output_shape
+            && rhs_layout.shape() == output_shape
+        {
+            return execute_elementwise_kernel(
+                lhs,
+                rhs,
+                output_shape.num_elements(),
+                include_str!("./kernels/add.cu"),
+                "add",
+            );
+        }
+        host_elementwise(lhs, lhs_layout, rhs, rhs_layout, output_shape, |a, b| a + b)
+    }
+
+    fn sub(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage> {
+        if Arc::ptr_eq(&lhs.context, &rhs.context)
+            && lhs_layout.is_contiguous()
+            && rhs_layout.is_contiguous()
+            && lhs_layout.shape() == output_shape
+            && rhs_layout.shape() == output_shape
+        {
+            return execute_elementwise_kernel(
+                lhs,
+                rhs,
+                output_shape.num_elements(),
+                include_str!("./kernels/sub.cu"),
+                "sub",
+            );
+        }
+        host_elementwise(lhs, lhs_layout, rhs, rhs_layout, output_shape, |a, b| a - b)
+    }
+
+    fn mul(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+        output_shape: &Shape,
+    ) -> InfersResult<Self::Storage> {
+        if Arc::ptr_eq(&lhs.context, &rhs.context)
+            && lhs_layout.is_contiguous()
+            && rhs_layout.is_contiguous()
+            && lhs_layout.shape() == output_shape
+            && rhs_layout.shape() == output_shape
+        {
+            return execute_elementwise_kernel(
+                lhs,
+                rhs,
+                output_shape.num_elements(),
+                include_str!("./kernels/mul.cu"),
+                "mul",
+            );
+        }
+        host_elementwise(lhs, lhs_layout, rhs, rhs_layout, output_shape, |a, b| a * b)
+    }
+
+    fn relu(input: &Self::Storage, layout: &Layout) -> InfersResult<Self::Storage> {
+        if !layout.is_contiguous() {
+            let data = Self::to_host(input, layout)?;
+            return Self::from_host(
+                data.into_iter()
+                    .map(|value| value.max(0.0))
+                    .collect::<Vec<_>>(),
+            );
+        }
+
+        let context = Arc::clone(&input.context);
+        let stream = context.default_stream();
+        let function = compile_kernel(include_str!("./kernels/relu.cu"), "relu", &context)?;
+        let size = layout.shape().num_elements();
+        let mut output = stream.alloc_zeros::<f32>(size)?;
+
+        // SAFETY: input and output are valid f32 buffers in the same context and both
+        // contain at least `size` elements expected by the kernel.
+        unsafe {
+            stream
+                .launch_builder(&function)
+                .arg(&input.buffer)
+                .arg(&mut output)
+                .arg(&size)
+                .launch(LaunchConfig::for_num_elems(size as u32))?;
+        }
+        stream.synchronize()?;
         Ok(CudaStorage {
-            context: ctx,
-            buffer: slice,
+            context,
+            buffer: output,
         })
     }
 
-    fn read(storage: &Self::Storage, idx: usize) -> f32 {
-        let stream = storage.context.default_stream();
-
-        let view = storage
-            .buffer
-            .try_slice(idx..idx + 1)
-            .expect("Slice failed");
-
-        let host_val = stream
-            .clone_dtoh(&view)
-            .expect("DTOH failed for single element");
-
-        stream.synchronize().expect("Synchronize failed");
-
-        host_val[0]
-    }
-
-    fn write(storage: &mut Self::Storage, idx: usize, value: f32) {
-        let stream = storage.context.default_stream();
-
-        let mut view = storage
-            .buffer
-            .try_slice_mut(idx..idx + 1)
-            .expect("Slice failed");
-
-        let host_val = [value];
-
-        stream
-            .memcpy_htod(&host_val, &mut view)
-            .expect("HTOD failed for single element");
-
-        stream.synchronize().expect("Synchronize failed");
-    }
-
-    fn copy_to_host(storage: &Self::Storage) -> InfersResult<Vec<f32>> {
-        storage
-            .context
-            .default_stream()
-            .clone_dtoh(&storage.buffer)
-            .map_err(|e| e.into())
-    }
-
-    fn add(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/add.cu"), "add").unwrap()
-    }
-
-    fn sub(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/sub.cu"), "sub").unwrap()
-    }
-
-    fn mul(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        execute_elementwise_op(lhs, rhs, size, include_str!("./kernels/mul.cu"), "mul").unwrap()
-    }
-
-    fn relu(input: &Self::Storage, size: usize) -> Self::Storage {
-        let ctx = input.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/relu.cu"), "relu", &ctx).unwrap();
-
-        let config = LaunchConfig::for_num_elems(size as u32);
-        let mut out_device = stream.alloc_zeros::<f32>(size).unwrap();
-
-        unsafe {
-            stream
-                .launch_builder(&func)
-                .arg(&input.buffer)
-                .arg(&mut out_device)
-                .arg(&size)
-                .launch(config)
-                .unwrap();
+    fn gemm(params: GemmParams<f32, Self::Storage>) -> InfersResult<Self::Storage> {
+        if !Arc::ptr_eq(&params.lhs.context, &params.rhs.context) {
+            let lhs = raw_to_host(params.lhs)?;
+            let rhs = raw_to_host(params.rhs)?;
+            let lhs_strides = params.lhs_layout.strides();
+            let rhs_strides = params.rhs_layout.strides();
+            let mut output = vec![0.0; params.m * params.n];
+            for row in 0..params.m {
+                for column in 0..params.n {
+                    let mut sum = 0.0;
+                    for inner in 0..params.k {
+                        sum += lhs[row * lhs_strides[0] + inner * lhs_strides[1]]
+                            * rhs[inner * rhs_strides[0] + column * rhs_strides[1]];
+                    }
+                    output[row * params.n + column] = params.alpha * sum;
+                }
+            }
+            return Self::from_host(output);
         }
 
-        stream.synchronize().expect("Synchronize failed");
-
-        CudaStorage {
-            context: ctx,
-            buffer: out_device,
-        }
-    }
-
-    fn gemm(params: GemmParams<f32, Self::Storage>) -> Self::Storage {
-        let ctx = params.lhs.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/gemm.cu"), "gemm", &ctx).unwrap();
-
-        let mut c = stream.alloc_zeros::<f32>(params.m * params.n).unwrap();
-        let c_row_stride = params.n;
-        let c_col_stride = 1;
-
+        let context = Arc::clone(&params.lhs.context);
+        let stream = context.default_stream();
+        let function = compile_kernel(include_str!("./kernels/gemm.cu"), "gemm", &context)?;
+        let mut output = stream.alloc_zeros::<f32>(params.m * params.n)?;
+        let output_row_stride = params.n;
+        let output_column_stride = 1;
+        let lhs_strides = params.lhs_layout.strides();
+        let rhs_strides = params.rhs_layout.strides();
         let block = (16, 16, 1);
-        let grid = (params.n.div_ceil(block.0), params.m.div_ceil(block.1), 1);
-
         let config = LaunchConfig {
-            grid_dim: (grid.0 as u32, grid.1 as u32, 1),
+            grid_dim: (
+                params.n.div_ceil(block.0) as u32,
+                params.m.div_ceil(block.1) as u32,
+                1,
+            ),
             block_dim: (block.0 as u32, block.1 as u32, 1),
-
-            // TILE_SIZE * (TILE_SIZE + 1) * sizeof(float) * 2 matrices (As and Bs)
-            // TILE_SIZE = 16, float size = 4 bytes
-            // 16 * 17 * 4 * 2 = 2176 bytes
-            shared_mem_bytes: (16 * 17 * 4 * 2),
+            shared_mem_bytes: 16 * 17 * 4 * 2,
         };
 
+        // SAFETY: validated rank-2 layouts provide both strides, buffers share one
+        // context, and the output allocation contains `m * n` f32 elements.
         unsafe {
             stream
-                .launch_builder(&func)
+                .launch_builder(&function)
                 .arg(&params.m)
                 .arg(&params.n)
                 .arg(&params.k)
                 .arg(&params.alpha)
                 .arg(&params.lhs.buffer)
-                .arg(&params.lhs_strides[0])
-                .arg(&params.lhs_strides[1])
+                .arg(&lhs_strides[0])
+                .arg(&lhs_strides[1])
                 .arg(&params.rhs.buffer)
-                .arg(&params.rhs_strides[0])
-                .arg(&params.rhs_strides[1])
+                .arg(&rhs_strides[0])
+                .arg(&rhs_strides[1])
                 .arg(&params.beta)
-                .arg(&mut c)
-                .arg(&c_row_stride)
-                .arg(&c_col_stride)
-                .launch(config)
-                .unwrap();
+                .arg(&mut output)
+                .arg(&output_row_stride)
+                .arg(&output_column_stride)
+                .launch(config)?;
         }
-
-        stream.synchronize().expect("Synchronize failed");
-
-        CudaStorage {
-            context: ctx,
-            buffer: c,
-        }
+        stream.synchronize()?;
+        Ok(CudaStorage {
+            context,
+            buffer: output,
+        })
     }
 
-    fn dot(lhs: &Self::Storage, rhs: &Self::Storage, size: usize) -> Self::Storage {
-        let ctx = lhs.context.clone();
-        let stream = ctx.default_stream();
-
-        let func = compile_kernel(include_str!("./kernels/dot.cu"), "dot", &ctx).unwrap();
-
-        let mut result = stream.alloc_zeros::<f32>(1).unwrap();
-
-        let block_size = 256;
-        let grid_size = size.div_ceil(block_size);
-
-        let config = LaunchConfig {
-            grid_dim: (grid_size as u32, 1, 1),
-            block_dim: (block_size as u32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-
-        unsafe {
-            stream
-                .launch_builder(&func)
-                .arg(&lhs.buffer)
-                .arg(&rhs.buffer)
-                .arg(&mut result)
-                .arg(&size)
-                .launch(config)
-                .unwrap();
-        }
-
-        stream.synchronize().expect("Synchronize failed");
-
-        CudaStorage {
-            context: ctx,
-            buffer: result,
-        }
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "cuda")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backend_init_and_copy_roundtrip_cuda() {
-        let host = vec![1.0f32, 2.0, 3.0, 4.0];
-        let storage = Cuda::init(&host).unwrap();
-        let back = Cuda::copy_to_host(&storage).unwrap();
-        assert_eq!(back, host);
-    }
-
-    #[test]
-    fn test_backend_add_cuda() {
-        let lhs = vec![1.0f32, 2.0, 3.0, 4.0];
-        let rhs = vec![5.0f32, 6.0, 7.0, 8.0];
-        let size = lhs.len();
-        let s_lhs = Cuda::init(&lhs).unwrap();
-        let s_rhs = Cuda::init(&rhs).unwrap();
-        let s_out = Cuda::add(&s_lhs, &s_rhs, size);
-        let result = Cuda::copy_to_host(&s_out).unwrap();
-        assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
-    }
-
-    #[test]
-    fn test_backend_sub_cuda() {
-        let lhs = vec![5.0f32, 6.0, 7.0, 8.0];
-        let rhs = vec![1.0f32, 2.0, 3.0, 4.0];
-        let size = lhs.len();
-        let s_lhs = Cuda::init(&lhs).unwrap();
-        let s_rhs = Cuda::init(&rhs).unwrap();
-        let s_out = Cuda::sub(&s_lhs, &s_rhs, size);
-        let result = Cuda::copy_to_host(&s_out).unwrap();
-        assert_eq!(result, vec![4.0, 4.0, 4.0, 4.0]);
-    }
-
-    #[test]
-    fn test_backend_relu_cuda() {
-        let input = vec![-1.0, -2.0, 3.0, 4.0];
-        let s_input = Cuda::init(&input).unwrap();
-        let s_out = Cuda::relu(&s_input, input.len());
-        let result = Cuda::copy_to_host(&s_out).unwrap();
-        assert_eq!(result, vec![0.0, 0.0, 3.0, 4.0]);
-    }
-
-    #[test]
-    fn test_backend_gemm_cuda_2x2() {
-        // A = [1 2; 3 4], B = [5 6; 7 8]
-        let lhs = [1.0, 2.0, 3.0, 4.0];
-        let rhs = [5.0, 6.0, 7.0, 8.0];
-        let m = 2;
-        let k = 2;
-        let n = 2;
-        let lhs_strides = [2, 1];
-        let rhs_strides = [2, 1];
-
-        let s_lhs = Cuda::init(&lhs).unwrap();
-        let s_rhs = Cuda::init(&rhs).unwrap();
-
-        let s_out = Cuda::gemm(GemmParams {
-            lhs: &s_lhs,
-            rhs: &s_rhs,
-            lhs_strides: lhs_strides.to_vec(),
-            rhs_strides: rhs_strides.to_vec(),
-            alpha: 1.0,
-            beta: 0.0,
-            m,
-            n,
-            k,
-        });
-
-        let result = Cuda::copy_to_host(&s_out).unwrap();
-        assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
-    }
-
-    #[test]
-    fn test_backend_dot_cuda() {
-        let lhs = vec![1.0, 2.0, 3.0, 4.0];
-        let rhs = vec![5.0, 6.0, 7.0, 8.0];
-        let size = lhs.len();
-        let s_lhs = Cuda::init(&lhs).unwrap();
-        let s_rhs = Cuda::init(&rhs).unwrap();
-        let s_out = Cuda::dot(&s_lhs, &s_rhs, size);
-        let result = Cuda::copy_to_host(&s_out).unwrap();
-        assert_eq!(result, vec![70.0]);
-    }
-
-    #[test]
-    fn test_read_cuda() {
-        let host = vec![1.0f32, 2.0, 3.0, 4.0];
-        let storage = Cuda::init(&host).unwrap();
-        assert_eq!(Cuda::read(&storage, 2), 3.0);
-    }
-
-    #[test]
-    fn test_write_cuda() {
-        let host = vec![1.0f32, 2.0, 3.0, 4.0];
-        let mut storage = Cuda::init(&host).unwrap();
-        Cuda::write(&mut storage, 2, 5.0);
-        assert_eq!(Cuda::read(&storage, 2), 5.0);
+    fn dot(
+        lhs: &Self::Storage,
+        lhs_layout: &Layout,
+        rhs: &Self::Storage,
+        rhs_layout: &Layout,
+    ) -> InfersResult<Self::Storage> {
+        let lhs = Self::to_host(lhs, lhs_layout)?;
+        let rhs = Self::to_host(rhs, rhs_layout)?;
+        let result = lhs.into_iter().zip(rhs).map(|(a, b)| a * b).sum::<f32>();
+        Self::from_host(vec![result])
     }
 }

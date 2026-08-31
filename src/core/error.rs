@@ -68,6 +68,12 @@ impl fmt::Display for InfersError {
 
 impl std::error::Error for InfersError {}
 
+impl From<crate::tensor::TensorError> for InfersError {
+    fn from(err: crate::tensor::TensorError) -> Self {
+        Self::Tensor(err.to_string())
+    }
+}
+
 impl From<std::io::Error> for InfersError {
     fn from(err: std::io::Error) -> Self {
         InfersError::Io(err)

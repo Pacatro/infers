@@ -308,7 +308,6 @@ dependencies = [
  "prost-types",
  "rand",
  "rand_distr",
- "rayon",
 ]
 
 [[package]]

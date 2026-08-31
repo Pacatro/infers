@@ -14,12 +14,12 @@ fn bench_matmul_cpu(c: &mut Criterion) {
     for &n in SIZES {
         let bench_id = format!("CPU_{}x{}", n, n);
 
-        let t1 = Tensor::rand(&[n, n]);
-        let t2 = Tensor::rand(&[n, n]);
+        let t1 = Tensor::rand([n, n]).unwrap();
+        let t2 = Tensor::rand([n, n]).unwrap();
 
         group.bench_function(&bench_id, |b| {
             b.iter(|| {
-                let r = t1.gemm(&t2, None, None);
+                let r = t1.gemm(&t2, None, None).unwrap();
                 black_box(r);
             });
         });
@@ -35,12 +35,12 @@ fn bench_matmul_cuda(c: &mut Criterion) {
     for &n in SIZES {
         let bench_id = format!("CUDA_{}x{}", n, n);
 
-        let t1 = Tensor::rand(&[n, n]).to::<Cuda>().unwrap();
-        let t2 = Tensor::rand(&[n, n]).to::<Cuda>().unwrap();
+        let t1 = Tensor::rand([n, n]).unwrap().to::<Cuda>().unwrap();
+        let t2 = Tensor::rand([n, n]).unwrap().to::<Cuda>().unwrap();
 
         group.bench_function(&bench_id, |b| {
             b.iter(|| {
-                let r = t1.gemm(&t2, None, None);
+                let r = t1.gemm(&t2, None, None).unwrap();
                 black_box(r);
             });
         });
@@ -60,11 +60,11 @@ fn bench_transpose(c: &mut Criterion) {
     for (&n, &m) in SIZES.iter().zip(SIZES.iter().rev()) {
         let bench_id = format!("Transpose_{}x{}", n, m);
 
-        let t = Tensor::rand(&[n, m]);
+        let t = Tensor::rand([n, m]).unwrap();
 
         group.bench_function(&bench_id, |b| {
             b.iter(|| {
-                let r = t.t();
+                let r = t.t().unwrap();
                 black_box(r);
             });
         });
@@ -84,4 +84,4 @@ criterion_group! {
     targets = bench_transpose
 }
 
-criterion_main!(transpose_benches);
+criterion_main!(matmul_benches, transpose_benches);

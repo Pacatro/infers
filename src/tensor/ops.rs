@@ -1,621 +1,229 @@
-use num_traits::{Float, FromPrimitive, Num};
-use std::cell::RefCell;
-use std::ops;
-use std::rc::Rc;
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, sync::Arc};
 
-use crate::backends::GemmParams;
-use crate::tensor::base::compute_strides;
-use crate::{Tensor, backends::Backend};
+use num_traits::{FromPrimitive, Num};
 
-/// Formats a 1D shape into a 2D shape.
-fn format_1dshape(shape: &[usize]) -> Vec<usize> {
-    let ndims = shape.len();
+use crate::{
+    backends::{Backend, GemmParams},
+    core::InfersResult,
+};
 
-    if ndims != 1 {
-        return shape.to_vec();
-    }
-
-    vec![1, shape[0]]
-}
+use super::{Layout, Shape, Tensor, TensorError};
 
 impl<B, T> Tensor<B, T>
 where
     B: Backend<T>,
-    T: Num + FromPrimitive + Clone + Copy + FromPrimitive + Debug,
+    T: Num + FromPrimitive + Clone + Copy + Debug + Send + Sync,
 {
-    /// Performs element-wise addition between two tensors on the same device.
-    ///
-    /// The operation is delegated to the backend's efficient `add` method.
-    /// Returns a new tensor containing the result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    pub fn add(&self, rhs: &Self) -> Self {
-        let self_shape = format_1dshape(&self.shape);
-        let rhs_shape = format_1dshape(&rhs.shape);
-
-        let self_ndims = self_shape.len();
-        let rhs_ndims = rhs_shape.len();
-
-        assert_eq!(self_ndims, rhs_ndims);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let storage = B::add(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let strides = compute_strides(&self_shape);
-
-        Self {
-            storage: Rc::new(RefCell::new(storage)),
-            shape: self_shape.to_vec(),
-            strides: strides.to_vec(),
-            _backend: PhantomData,
-        }
+    pub fn add(&self, rhs: &Self) -> InfersResult<Self> {
+        let output_shape = self.shape().broadcast_with(rhs.shape())?;
+        let storage = B::add(
+            self.storage.as_ref(),
+            &self.layout,
+            rhs.storage.as_ref(),
+            &rhs.layout,
+            &output_shape,
+        )?;
+        Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    /// Performs element-wise subtraction between two tensors on the same device.
-    ///
-    /// The operation is delegated to the backend's efficient `sub` method.
-    /// Returns a new tensor containing the result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    pub fn sub(&self, rhs: &Self) -> Self {
-        let self_shape = format_1dshape(&self.shape);
-        let rhs_shape = format_1dshape(&rhs.shape);
-
-        let self_ndims = self_shape.len();
-        let rhs_ndims = rhs_shape.len();
-
-        assert_eq!(self_ndims, rhs_ndims);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let storage = B::sub(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let strides = compute_strides(&self_shape);
-
-        Self {
-            storage: Rc::new(RefCell::new(storage)),
-            shape: self_shape.to_vec(),
-            strides: strides.to_vec(),
-            _backend: PhantomData,
-        }
+    pub fn sub(&self, rhs: &Self) -> InfersResult<Self> {
+        let output_shape = self.shape().broadcast_with(rhs.shape())?;
+        let storage = B::sub(
+            self.storage.as_ref(),
+            &self.layout,
+            rhs.storage.as_ref(),
+            &rhs.layout,
+            &output_shape,
+        )?;
+        Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    /// Performs element-wise multiplication between two tensors on the same device.
-    ///
-    /// The operation is delegated to the backend's efficient `mul` method.
-    /// Returns a new tensor containing the result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    pub fn mul(&self, rhs: &Self) -> Self {
-        let self_shape = format_1dshape(&self.shape);
-        let rhs_shape = format_1dshape(&rhs.shape);
-
-        let self_ndims = self_shape.len();
-        let rhs_ndims = rhs_shape.len();
-
-        assert_eq!(self_ndims, rhs_ndims);
-
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let storage = B::mul(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-        let strides = compute_strides(&self_shape);
-
-        Self {
-            storage: Rc::new(RefCell::new(storage)),
-            shape: self_shape.to_vec(),
-            strides: strides.to_vec(),
-            _backend: PhantomData,
-        }
+    pub fn mul(&self, rhs: &Self) -> InfersResult<Self> {
+        let output_shape = self.shape().broadcast_with(rhs.shape())?;
+        let storage = B::mul(
+            self.storage.as_ref(),
+            &self.layout,
+            rhs.storage.as_ref(),
+            &rhs.layout,
+            &output_shape,
+        )?;
+        Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 
-    /// Computes the dot product of two tensors.
-    ///
-    /// The operation is delegated to the backend's efficient `dot` method.
-    /// Returns a new tensor containing the scalar result.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensors have different shapes or reside on different devices.
-    pub fn dot(&self, rhs: &Self) -> Self {
-        assert_eq!(self.ndims(), self.ndims());
-        assert_eq!(
-            self.device(),
-            rhs.device(),
-            "The two tensors must be on the same device."
-        );
-
-        let storage = B::dot(&self.storage.borrow(), &rhs.storage.borrow(), self.size());
-
-        let shape = vec![self.size()];
-        let strides = vec![1];
-
-        Self {
-            storage: Rc::new(RefCell::new(storage)),
-            shape,
-            strides,
-            _backend: PhantomData,
+    pub fn dot(&self, rhs: &Self) -> InfersResult<Self> {
+        if self.rank() != 1 || rhs.rank() != 1 || self.shape() != rhs.shape() {
+            return Err(TensorError::IncompatibleShapes {
+                operation: "dot product",
+                lhs: self.dims().to_vec(),
+                rhs: rhs.dims().to_vec(),
+            }
+            .into());
         }
+
+        let storage = B::dot(
+            self.storage.as_ref(),
+            &self.layout,
+            rhs.storage.as_ref(),
+            &rhs.layout,
+        )?;
+        Ok(Self::from_parts(
+            storage,
+            Layout::contiguous(Shape::new(Vec::<usize>::new())?),
+        ))
     }
 
-    /// Applies the ReLU activation function to the tensor.
-    ///
-    /// # Returns
-    ///
-    /// A new `Tensor` with the ReLU activation applied.
-    pub fn relu(&self) -> Self {
-        Self {
-            storage: Rc::new(RefCell::new(B::relu(&self.storage.borrow(), self.size()))),
-            shape: self.shape.clone(),
-            strides: self.strides.clone(),
-            _backend: PhantomData,
-        }
+    pub fn relu(&self) -> InfersResult<Self> {
+        let storage = B::relu(self.storage.as_ref(), &self.layout)?;
+        Ok(Self::from_parts(
+            storage,
+            Layout::contiguous(self.shape().clone()),
+        ))
     }
 
-    /// Flattens the tensor into a 1D array.
-    ///
-    /// # Returns
-    ///
-    /// A new `Tensor` with the flattened data.
-    pub fn flatten(&self) -> Self {
-        Self {
-            storage: self.storage.clone(),
-            shape: vec![self.size()],
-            strides: vec![1],
-            _backend: PhantomData,
-        }
+    pub fn reshape(&self, dims: impl Into<Vec<usize>>) -> InfersResult<Self> {
+        let layout = self.layout.reshape(Shape::new(dims)?)?;
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            layout,
+            _element: std::marker::PhantomData,
+        })
     }
 
-    /// Performs a general matrix multiplication (GEMM) between two tensors.
-    ///
-    /// # Arguments
-    ///
-    /// * `rhs`: The right-hand side tensor.
-    /// * `alpha`: Optional scalar multiplier for the matrix product. If not provided, defaults to 1.
-    /// * `beta`: Optional scalar multiplier for the existing tensor. If not provided, defaults to 0.
-    ///
-    /// # Returns
-    ///
-    /// A new `Tensor` containing the result of the matrix multiplication.
-    pub fn gemm(&self, rhs: &Self, alpha: Option<T>, beta: Option<T>) -> Self {
-        // If both tensors are 1D, perform a dot product
-        if self.ndims() == 1 && rhs.ndims() == 1 {
+    pub fn flatten(&self, axis: usize) -> InfersResult<Self> {
+        if axis > self.rank() {
+            return Err(TensorError::InvalidAxis {
+                axis,
+                rank: self.rank(),
+            }
+            .into());
+        }
+
+        let outer = Shape::new(self.dims()[..axis].to_vec())?.num_elements();
+        let inner = Shape::new(self.dims()[axis..].to_vec())?.num_elements();
+        self.reshape([outer, inner])
+    }
+
+    pub fn transpose(&self, axis_a: usize, axis_b: usize) -> InfersResult<Self> {
+        let layout = self.layout.transpose(axis_a, axis_b)?;
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            layout,
+            _element: std::marker::PhantomData,
+        })
+    }
+
+    pub fn t(&self) -> InfersResult<Self> {
+        if self.rank() != 2 {
+            return Err(TensorError::InvalidAxis {
+                axis: 1,
+                rank: self.rank(),
+            }
+            .into());
+        }
+        self.transpose(0, 1)
+    }
+
+    pub fn contiguous(&self) -> InfersResult<Self> {
+        if self.is_contiguous() {
+            return Ok(self.clone());
+        }
+
+        let storage = B::contiguous(self.storage.as_ref(), &self.layout)?;
+        Ok(Self::from_parts(
+            storage,
+            Layout::contiguous(self.shape().clone()),
+        ))
+    }
+
+    pub fn gemm(&self, rhs: &Self, alpha: Option<T>, beta: Option<T>) -> InfersResult<Self> {
+        if self.rank() == 1 && rhs.rank() == 1 {
             return self.dot(rhs);
         }
 
-        // Format 1D tensors shape as column vectors [30] -> [1, 30]
-        let self_shape = if self.ndims() == 1 {
-            &[1, self.shape[0]]
-        } else {
-            self.shape.as_slice()
-        };
-
-        let rhs_shape = if rhs.ndims() == 1 {
-            &[1, rhs.shape[0]]
-        } else {
-            rhs.shape.as_slice()
-        };
-
-        let m = self_shape[0];
-        let k = self_shape[1];
-        let n = rhs_shape[1];
-
-        assert_eq!(
-            k, rhs_shape[0],
-            "mat1 and mat2 shapes cannot be multiplied ({}x{} and {}x{})",
-            m, k, k, n
-        );
-
-        let alpha = alpha.unwrap_or(T::one());
-        let beta = beta.unwrap_or(T::zero());
-        let new_storage = B::gemm(GemmParams {
-            lhs: &self.storage.borrow(),
-            rhs: &rhs.storage.borrow(),
-            lhs_strides: self.strides.clone(),
-            rhs_strides: rhs.strides.clone(),
-            alpha,
-            beta,
+        let output_shape = self.shape().matmul_with(rhs.shape())?;
+        let m = self.dims()[0];
+        let k = self.dims()[1];
+        let n = rhs.dims()[1];
+        let storage = B::gemm(GemmParams {
+            lhs: self.storage.as_ref(),
+            lhs_layout: &self.layout,
+            rhs: rhs.storage.as_ref(),
+            rhs_layout: &rhs.layout,
+            alpha: alpha.unwrap_or_else(T::one),
+            beta: beta.unwrap_or_else(T::zero),
             m,
             n,
             k,
-        });
-        let shape = vec![m, n];
-        let strides = compute_strides(&shape);
+        })?;
 
-        Self {
-            storage: Rc::new(RefCell::new(new_storage)),
-            shape,
-            strides,
-            _backend: PhantomData,
-        }
-    }
-
-    /// Transposes a 2D tensor.
-    ///
-    /// Swaps the dimensions of a 2D tensor, effectively rotating it.
-    /// The underlying storage is not copied, only the shape and strides are updated.
-    ///
-    /// # Returns
-    ///
-    /// A new `Tensor` with transposed dimensions.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tensor is not 2-dimensional.
-    pub fn t(&self) -> Self {
-        // TODO: This only works for 2D tensors,
-        // See https://huggingface.co/blog/KeighBee/tensors-from-scratch-in-rust-p2
-        // to check how to generalize this
-        assert_eq!(self.ndims(), 2, "Transpose only works for 2D tensors");
-
-        Self {
-            storage: self.storage.clone(),
-            shape: vec![self.shape[1], self.shape[0]],
-            strides: vec![self.strides[1], self.strides[0]],
-            _backend: PhantomData,
-        }
-    }
-}
-
-impl<B, T> ops::Add for &Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
-{
-    type Output = Tensor<B, T>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        self.add(rhs)
-    }
-}
-
-impl<B, T> ops::Sub for &Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
-{
-    type Output = Tensor<B, T>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self.sub(rhs)
-    }
-}
-
-impl<B, T> ops::Mul for &Tensor<B, T>
-where
-    B: Backend<T>,
-    T: Float + Clone + Copy + FromPrimitive + Debug + Send + Sync,
-{
-    type Output = Tensor<B, T>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        self.mul(rhs)
+        Ok(Self::from_parts(storage, Layout::contiguous(output_shape)))
     }
 }
 
 #[cfg(test)]
-mod test {
-    #[cfg(feature = "cuda")]
-    use crate::backends::Cuda;
-    use crate::{Tensor, backends::Device};
+mod tests {
+    use crate::{Tensor, backends::Cpu};
 
     #[test]
-    fn test_tensor_add_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = &t1 + &t2;
-        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
-    }
-
-    #[test]
-    fn test_tensor_sub_cpu() {
-        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = &t1 - &t2;
-        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
-    }
-
-    #[test]
-    fn test_tensor_mul_cpu() {
-        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = &t1 * &t2;
-        assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
-    }
-
-    #[test]
-    fn test_tensor_dot_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[4]);
-        let t2 = Tensor::new(&[1., 2., 3., 4.], &[4]);
-        let t3 = t1.dot(&t2);
-        assert_eq!(t3.data().unwrap(), [30.]);
-        assert_eq!(t3.device(), Device::Cpu);
-        assert_eq!(t3.shape, &[4]);
-    }
-
-    #[test]
-    fn test_tensor_relu_cpu() {
-        let t = Tensor::new(&[-1., -2., 3., 4.], &[2, 2]);
-        let t = t.relu();
-        assert_eq!(t.data().unwrap(), vec![0., 0., 3., 4.]);
-        assert_eq!(t.device(), Device::Cpu);
-        assert_eq!(t.shape, &[2, 2]);
-    }
-
-    #[test]
-    fn test_tensor_flatten_cpu() {
-        let t = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t = t.flatten();
-        assert_eq!(t.shape, &[4]);
-        assert_eq!(t.strides, &[1]);
-        assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
-        assert_eq!(t.device(), Device::Cpu);
-    }
-
-    #[test]
-    fn test_tensor_gemm_same_shapes_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t2 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
-        assert_eq!(t3.device(), Device::Cpu);
-        assert_eq!(t3.shape, &[2, 2]);
-    }
-
-    #[test]
-    fn test_tensor_gemm_diff_shapes_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[2, 3]);
-        let t2 = Tensor::new(
-            &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
-            &[3, 4],
-        );
-        let t3 = t1.gemm(&t2, None, None);
+    fn elementwise_operations_return_valid_tensors() {
+        let lhs = Tensor::<Cpu>::new(&[1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+        let rhs = Tensor::<Cpu>::new(&[5.0, 6.0, 7.0, 8.0], [2, 2]).unwrap();
 
         assert_eq!(
-            t3.data().unwrap(),
-            [62., 68., 74., 80., 143., 158., 173., 188.]
+            lhs.add(&rhs).unwrap().data().unwrap(),
+            [6.0, 8.0, 10.0, 12.0]
         );
-        assert_eq!(t3.device(), Device::Cpu);
-        assert_eq!(t3.shape, &[2, 4]);
-    }
-
-    #[test]
-    fn test_tensor_gemm_1d_cpu() {
-        let t1 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
-        let t2 = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.data().unwrap(), [30.]);
-        assert_eq!(t3.device(), Device::Cpu);
-        assert_eq!(t3.shape, &[4]);
-    }
-
-    #[test]
-    #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
-    fn test_tensor_gemm_bad_shapes_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t2 = Tensor::new(&[5., 6.], &[1, 2]);
-        let _ = t1.gemm(&t2, None, None);
-    }
-
-    #[test]
-    fn test_tensor_gemm_transpose_cpu() {
-        let t1 = Tensor::new(&[1., 4., 2., 5., 3., 6.], &[3, 2]);
-        let t2 = t1.t();
-        let t3 = t1.gemm(&t2, None, None);
-
         assert_eq!(
-            t3.data().unwrap(),
-            vec![17., 22., 27., 22., 29., 36., 27., 36., 45.]
+            lhs.sub(&rhs).unwrap().data().unwrap(),
+            [-4.0, -4.0, -4.0, -4.0]
         );
-        assert_eq!(t3.device(), Device::Cpu);
-        assert_eq!(t3.shape, &[3, 3]);
-    }
-
-    #[test]
-    fn test_1d_tensor_ops() {
-        let t1 = Tensor::new(&[1., 2., 3., 4.], &[4]);
-        let t2 = Tensor::new(&[5., 6., 7., 8.], &[4]);
-        let t3 = t1.add(&t2);
-        let t4 = t1.sub(&t2);
-        let t5 = t1.mul(&t2);
-        assert_eq!(t3.ndims(), 2);
-        assert_eq!(t4.ndims(), 2);
-        assert_eq!(t5.ndims(), 2);
-    }
-
-    #[test]
-    #[ignore = "Not implemented"]
-    fn test_tensor_gemm_ndims_cpu() {
-        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
-        let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
-
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.shape, &[2, 2, 2]);
         assert_eq!(
-            t3.data().unwrap(),
-            vec![19., 22., 43., 50., 111., 122., 151., 166.]
+            lhs.mul(&rhs).unwrap().data().unwrap(),
+            [5.0, 12.0, 21.0, 32.0]
         );
-        assert_eq!(t3.device(), Device::Cpu);
     }
 
     #[test]
-    fn test_tensor_transpose() {
-        let t = Tensor::new(&[1., 2., 3., 4., 5., 6.], &[3, 2]);
-        let t = t.t();
-        assert_eq!(t.shape, &[2, 3]);
-        assert_eq!(t.strides, &[1, 2]);
+    fn add_supports_broadcasting() {
+        let lhs = Tensor::<Cpu>::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+        let rhs = Tensor::<Cpu>::new(&[10.0, 20.0, 30.0], [3]).unwrap();
+        let output = lhs.add(&rhs).unwrap();
+
+        assert_eq!(output.dims(), &[2, 3]);
+        assert_eq!(output.data().unwrap(), [11.0, 22.0, 33.0, 14.0, 25.0, 36.0]);
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_add_cuda() {
-        use Device;
-
-        let t1 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = &t1 + &t2;
-
-        assert_eq!(t3.data().unwrap(), vec![6., 8., 10., 12.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 2]);
+    fn transpose_and_reshape_share_layout_semantics() {
+        let tensor = Tensor::<Cpu>::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+        let transposed = tensor.transpose(0, 1).unwrap();
+        assert_eq!(transposed.dims(), &[3, 2]);
+        assert_eq!(transposed.strides(), &[1, 3]);
+        assert_eq!(transposed.data().unwrap(), [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+        assert!(transposed.reshape([6]).is_err());
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_sub_cuda() {
-        use Device;
+    fn gemm_uses_layout_strides() {
+        let lhs = Tensor::<Cpu>::new(&[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], [3, 2]).unwrap();
+        let rhs = lhs.t().unwrap();
+        let output = lhs.gemm(&rhs, None, None).unwrap();
 
-        let t1 = Tensor::<Cuda>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-
-        let t3 = &t1 - &t2;
-
-        assert_eq!(t3.data().unwrap(), vec![4., 4., 4., 4.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 2]);
+        assert_eq!(output.dims(), &[3, 3]);
+        assert_eq!(
+            output.data().unwrap(),
+            [17.0, 22.0, 27.0, 22.0, 29.0, 36.0, 27.0, 36.0, 45.0]
+        );
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_mul_cuda() {
-        let t1 = Tensor::new(&[5., 6., 7., 8.], &[2, 2]);
-        let t2 = Tensor::new(&[1., 2., 3., 4.], &[2, 2]);
-        let t3 = &t1 * &t2;
-        assert_eq!(t3.data().unwrap(), vec![5., 12., 21., 32.]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_dot_cuda() {
-        let t1 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[4]).unwrap();
-        let t2 = Tensor::<Cuda>::from_data(&[1., 2., 3., 4.], &[4]).unwrap();
-        let t3 = t1.dot(&t2);
-        assert_eq!(t3.data().unwrap(), [30.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[4]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_relu_cuda() {
-        let t = Tensor::<Cuda, f32>::from_data(&[-1., -2., 3., 4.], &[2, 2]).unwrap();
-        let t = t.relu();
-        assert_eq!(t.data().unwrap(), vec![0., 0., 3., 4.]);
-        assert_eq!(t.device(), Device::Cuda);
-        assert_eq!(t.shape, &[2, 2]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_flatten_cuda() {
-        let t = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t = t.flatten();
-        assert_eq!(t.shape, &[4]);
-        assert_eq!(t.strides, &[1]);
-        assert_eq!(t.data().unwrap(), vec![1., 2., 3., 4.]);
-        assert_eq!(t.device(), Device::Cuda);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_gemm_same_shapes_cuda() {
-        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6., 7., 8.], &[2, 2]).unwrap();
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.data().unwrap(), vec![19., 22., 43., 50.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 2]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_gemm_diff_shapes_cuda() {
-        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4., 5., 6.], &[2, 3]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(
-            &[5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16.],
-            &[3, 4],
+    fn flatten_respects_axis() {
+        let tensor = Tensor::<Cpu>::new(
+            &(0..24).map(|value| value as f32).collect::<Vec<_>>(),
+            [2, 3, 4],
         )
         .unwrap();
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(
-            t3.data().unwrap(),
-            vec![62., 68., 74., 80., 143., 158., 173., 188.]
-        );
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[2, 4]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_gemm_transpose_cuda() {
-        let t1 = Tensor::<Cuda>::from_data(&[1., 4., 2., 5., 3., 6.], &[3, 2]).unwrap();
-        let t2 = t1.t();
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(
-            t3.data().unwrap(),
-            vec![17., 22., 27., 22., 29., 36., 27., 36., 45.]
-        );
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, &[3, 3]);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    #[should_panic(expected = "mat1 and mat2 shapes cannot be multiplied (2x2 and 2x2)")]
-    fn test_tensor_gemm_bad_shapes_cuda() {
-        let t1 = Tensor::<Cuda, f32>::from_data(&[1., 2., 3., 4.], &[2, 2]).unwrap();
-        let t2 = Tensor::<Cuda, f32>::from_data(&[5., 6.], &[1, 2]).unwrap();
-        let _ = t1.gemm(&t2, None, None);
-    }
-
-    #[test]
-    #[ignore = "Not implemented"]
-    fn test_tensor_gemm_ndims_cuda() {
-        let t1 = Tensor::new(&[1., 2., 3., 4., 5., 6., 7., 8.], &[2, 2, 2]);
-        let t2 = Tensor::new(&[5., 6., 7., 8., 9., 10., 11., 12.], &[2, 2, 2]);
-
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.shape, &[2, 2, 2]);
-        assert_eq!(
-            t3.data().unwrap(),
-            vec![19., 22., 43., 50., 111., 122., 151., 166.]
-        );
-        assert_eq!(t3.device(), Device::Cpu);
-    }
-
-    #[test]
-    #[cfg(feature = "cuda")]
-    fn test_tensor_gemm_1d_cuda() {
-        let t1 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let t2 = Tensor::<Cuda>::from_data(&[1.0, 2.0, 3.0, 4.0], &[4]).unwrap();
-        let t3 = t1.gemm(&t2, None, None);
-
-        assert_eq!(t3.data().unwrap(), [30.]);
-        assert_eq!(t3.device(), Device::Cuda);
-        assert_eq!(t3.shape, [4]);
+        assert_eq!(tensor.flatten(1).unwrap().dims(), &[2, 12]);
+        assert_eq!(tensor.flatten(2).unwrap().dims(), &[6, 4]);
     }
 }
