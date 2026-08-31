@@ -114,10 +114,12 @@ where
                 // If we want to convert it to a vector of f32, we need to
                 // get the bytes in chunks of 4 (4*8 = 32) and then convert them using little-endian.
                 let data: InfersResult<Vec<f32>> = data
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|chunk| {
-                        let bytes = chunk.try_into()?;
-                        Ok(f32::from_le_bytes(bytes))
+                        let bytes = chunk;
+                        Ok(f32::from_le_bytes(*bytes))
                     })
                     .collect();
 
